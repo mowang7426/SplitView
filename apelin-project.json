@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "projectID": "32463968-9b81-40ff-990c-0e8f048878b6",
+  "kind": "tweak",
+  "template": {
+    "extensionID": "wiki.qaq.apelin.dev.tweak",
+    "templateID": "objc-hook",
+    "version": "0.1.1",
+    "digest": "sha256:f7aa0129fcb88ba57ea493d55f34828fd0bc1a435e5a0e3145dedf16118d4dc6"
+  },
+  "environment": {
+    "toolchain": {
+      "id": "f88a63eda7caa77b5dc1f336",
+      "digest": "sha256:346ee937396ee5e2ecbdd916c79b315252e18726db08abc28c0fbdff96fe5fab"
+    },
+    "sdk": {
+      "id": "iphoneos17.2-96db0f3e",
+      "digest": "sha256:96db0f3ef4dc7775fec55af884d2fad9ee0db767e15ea9aa318fe42a0fbc39c5"
+    }
+  },
+  "language": "objc",
+  "deploymentTarget": "16.0",
+  "architectures": {
+    "rootless": [
+      "arm64",
+      "arm64e"
+    ],
+    "roothide": [
+      "arm64e"
+    ]
+  },
+  "configurations": {
+    "Debug": {
+      "optimization": "0",
+      "debugInfo": true,
+      "defines": {
+        "DEBUG": "1"
+      }
+    },
+    "Release": {
+      "optimization": "2",
+      "debugInfo": true
+    }
+  },
+  "products": [
+    {
+      "id": "tweak",
+      "type": "dylib",
+      "name": "ZengNiuSplitView",
+      "sources": [
+        "Sources/*.m"
+      ],
+      "headerSearchPaths": [
+        "Sources"
+      ],
+      "objcARC": true,
+      "frameworks": [
+        "Foundation",
+        "UIKit",
+        "QuartzCore",
+        "CoreGraphics"
+      ],
+      "libraries": [
+        "substrate"
+      ],
+      "extensionSupport": [
+        {
+          "extension": "wiki.qaq.apelin.dev.tweak",
+          "component": "substrate"
+        }
+      ]
+    },
+    {
+      "id": "preferences",
+      "type": "bundle",
+      "name": "ZNSPreferences",
+      "sources": [
+        "Preferences/ZNSRootListController.m"
+      ],
+      "objcARC": true,
+      "frameworks": [
+        "Foundation",
+        "UIKit",
+        "CoreGraphics",
+        "QuartzCore",
+        "Preferences"
+      ],
+      "extensionSupport": [
+        {
+          "extension": "wiki.qaq.apelin.dev.preferences",
+          "component": "preferences"
+        }
+      ],
+      "infoPlist": "Preferences/Info.plist",
+      "resources": [
+        "Preferences/Resources/Root.plist",
+        "Preferences/Resources/Guide.plist",
+        "Preferences/Resources/Gestures.plist",
+        "Preferences/Resources/icon.png",
+        "Preferences/Resources/icon@2x.png",
+        "Preferences/Resources/icon@3x.png"
+      ]
+    }
+  ],
+  "build": {
+    "steps": [
+      {
+        "type": "compile",
+        "product": "tweak"
+      },
+      {
+        "type": "link",
+        "product": "tweak"
+      },
+      {
+        "type": "lipo",
+        "product": "tweak"
+      },
+      {
+        "type": "dsym",
+        "product": "tweak"
+      },
+      {
+        "type": "strip",
+        "product": "tweak",
+        "style": "non-global"
+      },
+      {
+        "type": "sign",
+        "product": "tweak",
+        "identity": "adhoc"
+      },
+      {
+        "type": "compile",
+        "product": "preferences"
+      },
+      {
+        "type": "link",
+        "product": "preferences"
+      },
+      {
+        "type": "bundle-resources",
+        "product": "preferences"
+      },
+      {
+        "type": "lipo",
+        "product": "preferences"
+      },
+      {
+        "type": "dsym",
+        "product": "preferences"
+      },
+      {
+        "type": "strip",
+        "product": "preferences",
+        "style": "non-global"
+      },
+      {
+        "type": "sign",
+        "product": "preferences",
+        "identity": "adhoc"
+      }
+    ]
+  },
+  "package": {
+    "id": "com.zengniu.splitview",
+    "name": "曾牛-分屏🐮",
+    "version": "0.7.66",
+    "description": "Experimental live app windows with Home Screen icon gestures and basic docking.",
+    "icon": "https://ys8smjzty4-dot.github.io/ZengNiupackages/depictions/com.zengniu.splitview/icon.png",
+    "author": "ZengNiu",
+    "section": "Tweaks",
+    "depends": [
+      "mobilesubstrate",
+      "preferenceloader"
+    ],
+    "layout": [
+      {
+        "path": "/Library/MobileSubstrate/DynamicLibraries/ZengNiuSplitView.dylib",
+        "product": "tweak"
+      },
+      {
+        "path": "/Library/PreferenceBundles/ZNSPreferences.bundle",
+        "product": "preferences"
+      },
+      {
+        "path": "/Library/PreferenceLoader/Preferences/ZNSPreferences.plist",
+        "file": "Preferences/PreferenceLoader.plist",
+        "mode": "0644"
+      }
+    ],
+    "tweakFilter": {
+      "dylib": "tweak",
+      "bundles": [
+        "com.apple.springboard",
+        "com.apple.UIKit"
+      ]
+    }
+  }
+}
