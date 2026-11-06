@@ -82,10 +82,15 @@
     }
     NSUInteger generation=self.portraitKeyboardRestoreGeneration;
     __weak typeof(self) weakSelf=self;
-    // Keep child counter-transforms active while the native Scene/Host canvas
-    // is being restored. They are cleared together with the root transform in
-    // clearPortraitKeyboardVisualRestore, after the canvas handoff succeeds.
-    self.session.znsPortraitRestorePrepareVisual=nil;
+    // Child counter-maps are removed inside the same no-animation host handoff,
+    // immediately before ZNSConfigureHostCanvas observes the restored canvas.
+    // The completion clears the root transform before normal UIKit layout.
+    self.session.znsPortraitRestorePrepareVisual=^{
+        typeof(self) owner=weakSelf;
+        if (owner && owner.portraitKeyboardVisualRestoring &&
+            owner.portraitKeyboardRestoreGeneration==generation)
+            [owner znsClearPortraitCompensation];
+    };
     BOOL accepted=[self.session znsRestorePortraitAfterHide:^(BOOL success) {
         typeof(self) owner=weakSelf;
         if (!owner || owner.portraitKeyboardRestoreGeneration!=generation) return;
