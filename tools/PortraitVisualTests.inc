@@ -279,19 +279,18 @@ static void LayeredHandoffTests(void) {
         [v layoutIfNeeded]; assert(v.layouts==layouts); // pending gate retains compensation
         Ack(v.session); assert(v.session.znsPortraitRestorePending);
         __weak ZNSFloatingView *weak=v;
+        CGAffineTransform contentCompensation=v.content.transform;
+        CGAffineTransform bodyCompensation=v.bodyBackground.transform;
+        CGAffineTransform canvasCompensation=v.canvasContainer.transform;
         v.session.hostView.onConfigure=^{
-            // The expanded child counter-maps must survive the host canvas
-            // mutation; otherwise content grows before the root visual restore
-            // and flashes one frame. They are cleared atomically with root
-            // transform only after the successful host handoff completes.
-            assert(!CGAffineTransformIsIdentity(weak.content.transform));
-            assert(!CGAffineTransformIsIdentity(weak.bodyBackground.transform));
-            assert(!CGAffineTransformIsIdentity(weak.canvasContainer.transform));
+            // The expanded counter-maps must survive host canvas mutation;
+            // clearing them here creates a mixed-scale frame. The production
+            // completion removes them only after the host handoff succeeds.
+            assert(CGAffineTransformEqualToTransform(weak.content.transform,contentCompensation));
+            assert(CGAffineTransformEqualToTransform(weak.bodyBackground.transform,bodyCompensation));
+            assert(CGAffineTransformEqualToTransform(weak.canvasContainer.transform,canvasCompensation));
         };
         ClientLayout(v.session);
-        assert(CGAffineTransformIsIdentity(v.content.transform));
-        assert(CGAffineTransformIsIdentity(v.bodyBackground.transform));
-        assert(CGAffineTransformIsIdentity(v.canvasContainer.transform));
         assert(!v.session.znsPortraitRestorePending && !v.portraitKeyboardVisualRestoring);
         assert(v.layouts==layouts+1);
         AssertVisualRect(v.frame,original);
