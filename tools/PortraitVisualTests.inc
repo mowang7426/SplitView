@@ -280,11 +280,18 @@ static void LayeredHandoffTests(void) {
         Ack(v.session); assert(v.session.znsPortraitRestorePending);
         __weak ZNSFloatingView *weak=v;
         v.session.hostView.onConfigure=^{
-            assert(CGAffineTransformIsIdentity(weak.content.transform));
-            assert(CGAffineTransformIsIdentity(weak.bodyBackground.transform));
-            assert(CGAffineTransformIsIdentity(weak.canvasContainer.transform));
+            // The expanded child counter-maps must survive the host canvas
+            // mutation; otherwise content grows before the root visual restore
+            // and flashes one frame. They are cleared atomically with root
+            // transform only after the successful host handoff completes.
+            assert(!CGAffineTransformIsIdentity(weak.content.transform));
+            assert(!CGAffineTransformIsIdentity(weak.bodyBackground.transform));
+            assert(!CGAffineTransformIsIdentity(weak.canvasContainer.transform));
         };
         ClientLayout(v.session);
+        assert(CGAffineTransformIsIdentity(v.content.transform));
+        assert(CGAffineTransformIsIdentity(v.bodyBackground.transform));
+        assert(CGAffineTransformIsIdentity(v.canvasContainer.transform));
         assert(!v.session.znsPortraitRestorePending && !v.portraitKeyboardVisualRestoring);
         assert(v.layouts==layouts+1);
         AssertVisualRect(v.frame,original);

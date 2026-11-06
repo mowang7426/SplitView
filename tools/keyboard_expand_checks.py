@@ -131,5 +131,10 @@ assert 'self.content.userInteractionEnabled=!self.portraitKeyboardVisualRestorin
 assert 'CGRect fitted=ZNSPortraitFittedCanvas(self.content.bounds,canvas)' in manager
 handoff=(p/'Sources/ZNSPortraitRestoreTransaction.inc').read_text()
 assert handoff.index('if (prepareVisual) prepareVisual();')<handoff.index('BOOL configured=ZNSConfigureHostCanvas')
+floating=(p/'Sources/ZNSPortraitFloating.inc').read_text()
+assert 'self.session.znsPortraitRestorePrepareVisual=nil;' in floating
+cleanup=floating.split('- (void)clearPortraitKeyboardVisualRestore {',1)[1].split('- (void)beginPortraitKeyboardVisualRestore',1)[0]
+assert 'self.transform=CGAffineTransformIdentity;' in cleanup and '[self znsClearPortraitCompensation];' in cleanup
+assert cleanup.index('self.transform=CGAffineTransformIdentity;')<cleanup.index('[self znsClearPortraitCompensation];')
 assert '[self znsClearPortraitCompensation]' in manager
-print('PASS keyboard11 descendant-only compensation, shared ordinary aspect-fit, layout/input gates, pre-host cleanup and chrome ownership; geometry/events verified separately, not device pixels.')
+print('PASS keyboard11 descendant compensation persists through host canvas configuration; root and child transforms clear in one no-animation transaction after successful handoff; geometry/events verified separately, not device pixels.')

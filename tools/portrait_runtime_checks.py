@@ -80,7 +80,7 @@ int main(void) { @autoreleasepool {
         ('visual-old-outer-endpoint','ZNSPortraitCompensation.inc','if (enabled) g=ZNSPortraitVisualGeometryMake','if (NO && enabled) g=ZNSPortraitVisualGeometryMake'),
         ('visual-uncleared-descendants','ZNSPortraitCompensation.inc','    [self znsSetPortraitCompensation:NO];','    /* missing compensation cleanup */'),
         ('visual-missing-canvas-fit','ZNSPortraitCompensation.inc','self.canvasContainer.transform=g.canvas;','self.canvasContainer.transform=CGAffineTransformIdentity;'),
-        ('visual-late-host-cleanup','ZNSPortraitRestoreTransaction.inc','            if (prepareVisual) prepareVisual();','            if (NO && prepareVisual) prepareVisual();'),
+        ('visual-prehost-compensation-clear','ZNSPortraitFloating.inc','    self.session.znsPortraitRestorePrepareVisual=nil;','    self.session.znsPortraitRestorePrepareVisual=^{ [self znsClearPortraitCompensation]; };'),
         ('visual-chrome-pop','ZNSPortraitCompensation.inc','[self znsSetPortraitChromeAlpha:enabled?0:1];','[self znsSetPortraitChromeAlpha:1];'),
     ]
     for name,file,old,new in faults:
