@@ -10,7 +10,9 @@ env:
   HOMEBREW_NO_AUTO_UPDATE: 1
 jobs:
   build:
-    runs-on: macos-15
+    # macos-15 is arm64 and can fail runner acquisition under capacity limits.
+    # Keep macOS 15 / Xcode 16.4; only change the host, not arm64e tweak targets.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
         with:
