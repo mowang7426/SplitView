@@ -6,8 +6,14 @@
     self.portraitKeyboardVisualRestoreGeneration++;
     // Own only our transform animation; never remove unrelated layer animations.
     [self.layer removeAnimationForKey:@"transform"];
-    [UIView performWithoutAnimation:^{ self.transform=CGAffineTransformIdentity; }];
-    [UIView performWithoutAnimation:^{ [self znsClearPortraitCompensation]; }];
+    // Commit the root transform and the child-view counter-transforms in one
+    // no-animation transaction. Clearing compensation in a separate UIKit
+    // transaction exposes one frame where the content has expanded while the
+    // floating window is still visually scaled (the keyboard-dismiss jump).
+    [UIView performWithoutAnimation:^{
+        self.transform=CGAffineTransformIdentity;
+        [self znsClearPortraitCompensation];
+    }];
     self.portraitKeyboardVisualRestoring=NO;
     [self updateContentInputGate];
     self.portraitKeyboardVisualReturning=NO;
@@ -76,11 +82,10 @@
     }
     NSUInteger generation=self.portraitKeyboardRestoreGeneration;
     __weak typeof(self) weakSelf=self;
-    self.session.znsPortraitRestorePrepareVisual=^{
-        typeof(self) owner=weakSelf;
-        if (owner.portraitKeyboardVisualRestoring && owner.portraitKeyboardRestoreGeneration==generation)
-            [owner znsClearPortraitCompensation];
-    };
+    // Keep child counter-transforms active while the native Scene/Host canvas
+    // is being restored. They are cleared together with the root transform in
+    // clearPortraitKeyboardVisualRestore, after the canvas handoff succeeds.
+    self.session.znsPortraitRestorePrepareVisual=nil;
     BOOL accepted=[self.session znsRestorePortraitAfterHide:^(BOOL success) {
         typeof(self) owner=weakSelf;
         if (!owner || owner.portraitKeyboardRestoreGeneration!=generation) return;
