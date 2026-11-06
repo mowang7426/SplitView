@@ -49,7 +49,7 @@ static NSUInteger restored,applied;
 static BOOL ZNSCanvasRootList(UIView *v) { return !v.dockOwner; }
 static UIView *ZNSCanvasDock(UIView *v) { return v.dockOwner; }
 static void ZNSCanvasRestore(UIView *v) { (void)v; restored++; }
-static NSArray *ZNSCanvasFind(UIView *v,NSString *name) { (void)name; return @[((SBDockView *)v) list]; }
+static NSArray *ZNSCanvasFind(UIView *v,NSString *name) { (void)name; return @[((SBDockView *)v).list]; }
 static void ZNSCanvasApply(UIView *v,UIView *list,BOOL dock) { (void)v;(void)list;(void)dock;applied++; }
 static void MSHookMessageEx(Class cls,SEL sel,IMP replacement,IMP *original) {
  Method m=class_getInstanceMethod(cls,sel); *original=method_getImplementation(m);
