@@ -74,7 +74,7 @@ int main(void) { @autoreleasepool {
         ('visual-synchronous-delivery','ZNSPortraitVisualEvent.inc','dispatch_async(dispatch_get_main_queue(),^{','ZNSVisualSynchronousTest(^{'),
         ('visual-premature-scene-restore','ZNSPortraitFloating.inc','    CGAffineTransform visual=CGAffineTransformMake(','    [self.session restoreTemporaryPortraitCanvas];\n    CGAffineTransform visual=CGAffineTransformMake('),
         ('visual-repeated-animation','ZNSPortraitFloating.inc','(self.portraitKeyboardVisualRestoring && !self.portraitKeyboardVisualReturning)) return;','(NO && self.portraitKeyboardVisualRestoring && !self.portraitKeyboardVisualReturning)) return;'),
-        ('visual-transform-not-cleared','ZNSPortraitFloating.inc','    [self.layer removeAnimationForKey:@"transform"];\n    [UIView performWithoutAnimation:^{ self.transform=CGAffineTransformIdentity; }];','    [self.layer removeAnimationForKey:@"transform"];\n    [UIView performWithoutAnimation:^{ self.transform=self.transform; }];'),
+        ('visual-transform-not-cleared','ZNSPortraitFloating.inc','    [self.layer removeAnimationForKey:@"transform"];\n    [UIView performWithoutAnimation:^{\n        self.transform=CGAffineTransformIdentity;\n        [self znsClearPortraitCompensation];\n    }];','    [self.layer removeAnimationForKey:@"transform"];\n    [UIView performWithoutAnimation:^{\n        self.transform=self.transform;\n        [self znsClearPortraitCompensation];\n    }];'),
     ]
     faults += [
         ('visual-old-outer-endpoint','ZNSPortraitCompensation.inc','if (enabled) g=ZNSPortraitVisualGeometryMake','if (NO && enabled) g=ZNSPortraitVisualGeometryMake'),
