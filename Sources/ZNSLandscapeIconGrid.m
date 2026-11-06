@@ -239,8 +239,9 @@ static void ZNSCanvasHook(NSString *name,BOOL dock) {
         BOOL managed=dock || ZNSCanvasRootList(view) || objc_getAssociatedObject(view,&ZNSCanvasStateKey)!=nil;
         if(!managed) {
             if(original) ((void(*)(id,SEL))original)(view,selector);
-            UIView *dockOwner=ZNSCanvasDock(view);
-            if(dockOwner && ![objc_getAssociatedObject(dockOwner,&ZNSCanvasBusyKey) boolValue]) [dockOwner setNeedsLayout];
+            // Native child layout is an effect, not an invalidation request.
+            // Marking its Dock dirty here makes Dock -> list -> Dock repeat,
+            // including portrait/appearance-only passes with no mounted canvas.
             return;
         }
         objc_setAssociatedObject(view,&ZNSCanvasBusyKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -264,6 +265,11 @@ static void ZNSCanvasHook(NSString *name,BOOL dock) {
         if([objc_getAssociatedObject(view,&ZNSCanvasBusyKey) boolValue] ||
            [objc_getAssociatedObject(dockOwner,&ZNSCanvasBusyKey) boolValue]) return;
         if(needsLayout) ((void(*)(id,SEL))needsLayout)(view,@selector(setNeedsLayout));
+        // Forward genuine external invalidation only for a mounted Dock canvas.
+        // Native invalidation during Dock restore/layout/apply is suppressed by
+        // the busy check above; never feed layout completion back into layout.
+        if(dockOwner && objc_getAssociatedObject(dockOwner,&ZNSCanvasStateKey))
+            [dockOwner setNeedsLayout];
     }),&needsLayout);
     __block IMP moved=NULL;
     MSHookMessageEx(cls,@selector(didMoveToWindow),imp_implementationWithBlock(^(UIView *view){

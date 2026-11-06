@@ -46,6 +46,7 @@ jobs:
           python3 tools/portrait_runtime_checks.py | tee build/portrait-runtime-checks.log
           python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
+          python3 tools/dark_mode_layout_checks.py | tee build/dark-mode-layout-checks.log
       - name: Build RootHide package
         run: |
           set -euo pipefail
