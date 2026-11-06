@@ -9,6 +9,7 @@
 #import "ZNSDipGeometry.h"
 #import "ZNSDipIconView.h"
 #import "ZNSKeyboardPlacement.h"
+#import "ZNSPortraitKeyboardGeometry.h"
 
 static BOOL ZNSDipEnabled=NO;
 static BOOL ZNSFollowDeviceRotation=NO;
@@ -160,6 +161,26 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 @property(nonatomic,copy) void (^geometryChanged)(void);
 @end
 @interface ZNSFloatingView : UIView <UIGestureRecognizerDelegate>
+@property(nonatomic) BOOL portraitKeyboardExpanded;
+@property(nonatomic) CGRect portraitKeyboardSavedFrame;
+@property(nonatomic) CGRect portraitKeyboardSavedExpandedFrame;
+@property(nonatomic) CGRect portraitKeyboardTarget;
+@property(nonatomic) BOOL portraitKeyboardSuppressed;
+@property(nonatomic) BOOL portraitKeyboardRestoring;
+@property(nonatomic) NSUInteger portraitKeyboardRestoreGeneration;
+@property(nonatomic) BOOL portraitKeyboardVisualRestoring;
+@property(nonatomic) BOOL portraitKeyboardVisualRestoreCompleted;
+@property(nonatomic) BOOL portraitKeyboardVisualFinalizePending;
+@property(nonatomic) BOOL portraitKeyboardVisualReturning;
+- (void)cancelPortraitKeyboardVisualRestoreWithDuration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options;
+- (void)znsRestorePortraitKeyboardAfterHide;
+- (void)znsResumePortraitAfterHide;
+- (void)clearPortraitKeyboardVisualRestore;
+@property(nonatomic) NSUInteger portraitKeyboardVisualRestoreGeneration;
+@property(nonatomic) BOOL portraitKeyboardChromeFading;
+- (void)expandPortraitKeyboardToFrame:(CGRect)frame duration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options;
+- (void)beginPortraitKeyboardVisualRestoreWithDuration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options;
+- (void)restorePortraitKeyboardWithDuration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options;
 @property(nonatomic,strong) ZNSSceneSession *session;
 @property(nonatomic,strong) UIView *content;
 @property(nonatomic,strong) UIView *canvasContainer;
@@ -405,6 +426,7 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 - (void)refreshKeyboardDismissShield;
 - (BOOL)consumeKeyboardOutsideTap:(UITapGestureRecognizer *)gesture;
 - (void)keyboardOutsideTapped:(UITapGestureRecognizer *)gesture;
+- (void)portraitKeyboardGeometryChanged:(NSNotification *)notification;
 - (void)externalKeyboardVisibilityChanged:(NSNotification *)notification;
 - (void)updateOutsideButton;
 @property(nonatomic) BOOL enabled;
@@ -518,6 +540,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
 }
 
 @implementation ZNSFloatingView
+#include "ZNSPortraitFloating.inc"
 - (BOOL)isStackParticipant {
     return !self.closing && !self.dipped && !self.docked && (!self.thumbnail || self.thumbnailFree);
 }
@@ -812,7 +835,10 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
 }
 - (void)updateContentInputGate {
     [self updateStackActivation];
-    BOOL block=self.parkedBottomContact || self.cornerPushing || self.closing || self.dipped || self.dismissing || self.rebounding || self.thumbnail || self.docked || self.session.layoutInFlight;
+    // UIKit hit tests are gated too, even if the existing remote layer-input
+    // capability is unavailable. Normal-state policy matches layoutSubviews.
+    self.content.userInteractionEnabled=!self.portraitKeyboardVisualRestoring && !self.thumbnail && !self.dipped;
+    BOOL block=self.portraitKeyboardVisualRestoring || self.parkedBottomContact || self.cornerPushing || self.closing || self.dipped || self.dismissing || self.rebounding || self.thumbnail || self.docked || self.session.layoutInFlight;
     if (block==self.contentInputBlocked) return;
     BOOL applied=self.contentInputSaved && ZNSSetLayerInputEnabled(self.content.layer,block?NO:self.contentInputOriginal);
     if (applied) self.contentInputBlocked=block;
@@ -865,6 +891,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
 }
 - (void)layoutSubviews {
     [super layoutSubviews];
+    if (self.portraitKeyboardVisualRestoring || self.session.znsPortraitRestorePending) return;
     [self updateContentInputGate];
     BOOL expanded=self.tools.userInteractionEnabled;
     BOOL parked=self.docked || self.thumbnail;
@@ -941,15 +968,26 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     NSString *outward=self.thumbnailRight?@"右滑":@"左滑";
     self.thumbnailButton.accessibilityLabel=self.thumbnailTier==2?@"第三档实时空挂，触摸置顶":@"实时缩略窗，点击恢复小窗";
     self.thumbnailButton.accessibilityHint=self.thumbnailTier==2?@"轻点只置顶，不恢复分屏；慢拖移动，快速左滑或右滑回对应侧一档；快速下滑回可移动二档，横竖屏同灵敏度；上滑关闭":(self.thumbnailTier==1?@"普通慢拖自由移动；被主窗遮挡时首次点击只置顶，再点恢复；快速左滑回左侧一档、右滑回右侧一档；上滑关闭，竖向App下滑回原侧一档，二者同灵敏度；横向App下滑升三档，横竖屏同灵敏度":[NSString stringWithFormat:@"下滑放大到第二档；上滑关闭，向内横滑换边，%@收为图标，长按旋转",outward]);
-    self.content.frame=self.thumbnail?ZNSThumbnailContentFrame(self.session.canvasSize,self.bounds,(unsigned)self.thumbnailTier):(self.docked?self.bounds:ZNSMainContent(self.bounds));
+    // Temporary input uses the ENTIRE scene, including native keyboard space.
+    // No toolbar gutter, aspect-fit letterbox, manual inset or second height deduction.
+    self.content.frame=self.portraitKeyboardExpanded?self.bounds:(self.thumbnail?ZNSThumbnailContentFrame(self.session.canvasSize,self.bounds,(unsigned)self.thumbnailTier):(self.docked?self.bounds:ZNSMainContent(self.bounds)));
+    self.content.layer.maskedCorners=self.portraitKeyboardExpanded?(kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner):(kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner|kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner);
+    if (self.portraitKeyboardExpanded) {
+        self.bodyBackground.frame=self.bounds;
+        self.toolbar.hidden=YES;
+        self.bottomBar.hidden=YES;
+        self.bottomBar.userInteractionEnabled=NO;
+        ZNSSetLayerInputEnabled(self.bottomBar.layer,NO);
+    }
     self.stackActivation.frame=self.content.bounds;
     self.message.frame=CGRectInset(self.content.bounds,12,12);
     UIView *host=self.session.hostView;
     CGSize canvas=self.session.canvasSize;
     if (host && canvas.width>0 && canvas.height>0) {
         self.canvasContainer.bounds=(CGRect){CGPointZero,canvas};
-        CGFloat scale=MIN(self.content.bounds.size.width/canvas.width,self.content.bounds.size.height/canvas.height);
-        self.canvasContainer.transform=CGAffineTransformMakeScale(scale,scale);
+        CGRect fitted=ZNSPortraitFittedCanvas(self.content.bounds,canvas);
+        CGFloat scale=fitted.size.width/canvas.width;
+        self.canvasContainer.transform=self.portraitKeyboardExpanded?ZNSPortraitCanvasTransform():CGAffineTransformMakeScale(scale,scale);
         self.canvasContainer.center=CGPointMake(CGRectGetMidX(self.content.bounds),CGRectGetMidY(self.content.bounds));
         [self.session layoutHostInCanvas];
         host.userInteractionEnabled=!self.docked && !self.thumbnail && !self.dipped && !self.session.layoutInFlight;
@@ -1173,6 +1211,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     return hit;
 }
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gesture {
+    if ([gesture isKindOfClass:UIPanGestureRecognizer.class]) [self restorePortraitKeyboardWithDuration:0 options:0];
     BOOL dipResize=self.dipExtracted && self.dipResizeAvailable &&
         self.corners.count>1 && gesture.view==self.corners[1];
     if(self.dipped && gesture.view!=self.toolbar && !dipResize) return NO;
@@ -1193,6 +1232,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     return YES;
 }
 - (void)cancelInteraction {
+    [self restorePortraitKeyboardWithDuration:0 options:0];
     [self stopSqueezeFeedback];
     ++self.interactionGeneration;
     BOOL transformed=self.dismissing || self.rebounding || self.cornerPushing;
@@ -1348,6 +1388,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     else if (self.closeAction) { ZNSActionFeedback(); self.closeAction(sender.tag==2); }
 }
 - (BOOL)parkLiveThumbnail {
+    [self restorePortraitKeyboardWithDuration:0 options:0];
     if(self.dipped) return NO;
     if (self.closing || self.activeManipulation || self.dismissing || self.rebounding || self.docked || self.thumbnail || (!self.connecting && (self.session.layoutInFlight || !self.ready))) return NO;
     CGRect target=[self thumbnailFrameInSafe:[self safe]];
@@ -1644,6 +1685,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     [self rotateHostedCanvas];
 }
 - (void)dock {
+    [self restorePortraitKeyboardWithDuration:0 options:0];
     if (self.closing || self.activeManipulation || self.dismissing || self.rebounding || self.docked || self.thumbnail || self.session.layoutInFlight) return;
     ZNSActionFeedback();
     self.dockedFromThumbnail=NO;
@@ -1883,6 +1925,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     return self.deviceRotationInFlight;
 }
 - (void)rotateHostedCanvasToLandscape:(BOOL)landscape automatic:(BOOL)automatic {
+    [self restorePortraitKeyboardWithDuration:0 options:0];
     if(self.dipped) return;
     if(automatic && !ZNSFollowDeviceRotation && !self.switcherLaunchOrientationPending) { self.pendingDeviceOrientation=NO; return; }
     if (self.closing || self.parkedPan || self.activeManipulation || self.dismissing || self.rebounding || !self.ready || (!automatic && self.docked) || self.session.layoutInFlight) return;
@@ -1928,6 +1971,11 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     }
 }
 - (void)fitAfterContainerChange {
+    // UIKit may relayout the unchanged root while the keyboard animates.
+    // Only a real container/safe-area change owns the presentation now.
+    if (!CGSizeEqualToSize(self.superview.bounds.size,self.lastContainerSize) ||
+        !CGRectEqualToRect([self safe],self.lastSafeBounds))
+        [self restorePortraitKeyboardWithDuration:0 options:0];
     if(self.closing) return;
     if(self.dipExtracted) {
         CGSize size=self.superview.bounds.size;
@@ -2940,6 +2988,8 @@ static NSUInteger ZNSRecognizedSwipes;
     static ZNSWindowManager *manager; static dispatch_once_t once;
     dispatch_once(&once,^{ manager=[self new]; manager.windows=[NSMutableArray new]; manager.parkedOrder=[NSMutableArray new]; manager.iconViews=[NSHashTable weakObjectsHashTable]; manager.enabled=NO; manager.maxParkedApps=8; manager.maxDippedApps=3; manager.iconGesture=@"both"; manager.excluded=[NSSet set];
         [[NSNotificationCenter defaultCenter] addObserver:manager selector:@selector(dipMotionPreferenceChanged:) name:UIAccessibilityReduceMotionStatusDidChangeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:manager selector:@selector(portraitKeyboardGeometryChanged:) name:ZNSPortraitKeyboardGeometryDidChangeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:manager selector:@selector(portraitKeyboardWillHideVisual:) name:ZNSPortraitKeyboardWillHideVisualNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:manager selector:@selector(externalKeyboardVisibilityChanged:) name:ZNSExternalKeyboardVisibilityDidChangeNotification object:nil];
     });
     return manager;
@@ -3719,7 +3769,10 @@ static NSUInteger ZNSRecognizedSwipes;
     ZNSFloatingView *owner=self.floating;
     BOOL focusAllowed=owner.ready && !owner.closing && !owner.docked && !owner.thumbnail && !owner.dipped && !owner.rebounding && !self.window.hidden;
     for(ZNSFloatingView *view in self.windows)
-        if(view!=owner || !focusAllowed) [view.session setKeyboardFocusActive:NO];
+        if(view!=owner || !focusAllowed) {
+            [view restorePortraitKeyboardWithDuration:0 options:0];
+            [view.session setKeyboardFocusActive:NO];
+        }
     if(focusAllowed) [owner.session setKeyboardFocusActive:YES];
     BOOL active=(self.floating.ready || self.floating.connecting) && !self.floating.docked && !self.floating.thumbnail && !self.floating.dipped && !self.floating.rebounding;
     self.outsideButton.hidden=!active;
@@ -3727,6 +3780,7 @@ static NSUInteger ZNSRecognizedSwipes;
     BOOL applied=ZNSSetLayerInputEnabled(self.outsideButton.layer,active);
     os_log(ZNSLog(),"outside park input active=%d applied=%d",active,applied);
 }
+#include "ZNSPortraitManager.inc"
 - (void)externalKeyboardVisibilityChanged:(NSNotification *)notification {
     (void)notification;
     [self refreshKeyboardDismissShield];
@@ -3871,6 +3925,9 @@ static NSUInteger ZNSRecognizedSwipes;
     if(view==self.dipExtractedWindow) [self clearDipExtraction];
     if(fullscreen || UIAccessibilityIsReduceMotionEnabled()) { [self finishCloseWindow:view fullscreen:fullscreen]; return; }
     view.closing=YES; ++view.interactionGeneration; ++view.toolsGeneration;
+    // Lifecycle must invalidate a pending visual hide before taking ownership
+    // of the root transform for the closing animation.
+    [view restorePortraitKeyboardWithDuration:0 options:0];
     view.rebounding=NO; view.dismissing=NO; view.activeManipulation=nil; view.userInteractionEnabled=NO;
     view.activationReadyCompletion=nil;
     view.presentationChanged=nil; view.willActivate=nil; view.closeAction=nil; view.canOccupy=nil;
@@ -3892,6 +3949,7 @@ static NSUInteger ZNSRecognizedSwipes;
     NSString *bundle=view.session.bundleIdentifier;
     BOOL expandedFullscreen=fullscreen && view.fullscreenExpanding;
     view.closing=YES; ++view.interactionGeneration; ++view.toolsGeneration;
+    [view restorePortraitKeyboardWithDuration:0 options:0];
     view.rebounding=NO; view.dismissing=NO; view.activeManipulation=nil;
     view.activationReadyCompletion=nil;
     view.presentationChanged=nil; view.willActivate=nil; view.closeAction=nil; view.canOccupy=nil;

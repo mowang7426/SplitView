@@ -1,5 +1,6 @@
 #import "ZNSKeyboardPlacement.h"
 #import "ZNSKeyboardPolicy.h"
+#import "ZNSPortraitKeyboardGeometry.h"
 #import "ZNSPrivate.h"
 #import "ZNSLayerInput.h"
 #import "ZNSKeyboardClient.h"
@@ -17,6 +18,8 @@
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAllButUpsideDown; }
 @end
 
+NSNotificationName const ZNSPortraitKeyboardWillHideVisualNotification=@"ZNSPortraitKeyboardWillHideVisual";
+NSNotificationName const ZNSPortraitKeyboardGeometryDidChangeNotification=@"ZNSPortraitKeyboardGeometryDidChange";
 NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZNSExternalKeyboardVisibilityDidChange";
 
 @interface ZNSKeyboardClipView : UIView
@@ -55,6 +58,11 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 @property(nonatomic) BOOL keyboardHidden;
 @property(nonatomic) BOOL clientKeyboardShown;
 @property(nonatomic) BOOL clientVisibilityKnown;
+@property(nonatomic) BOOL clientKeyboardWillHide;
+@property(nonatomic) NSUInteger portraitKeyboardVisualPhaseGeneration;
+// Once a verified keyboard is visible, this survives reparent/canvas churn.
+// Only a PID-validated App hide (or normal lifecycle teardown) clears it.
+@property(nonatomic) BOOL portraitKeyboardVisibleLatch;
 @property(nonatomic) CFTimeInterval hiddenAt;
 @property(nonatomic) BOOL nativeScreenKeyboard;
 @property(nonatomic) NSTimeInterval presentationDuration;
@@ -65,6 +73,11 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 @property(nonatomic,strong) NSMutableArray *observers;
 @property(nonatomic) CGSize canvas;
 @property(nonatomic,readwrite) BOOL external;
+@property(nonatomic) BOOL portraitExpansion;
+@property(nonatomic) CGRect portraitKeyboardFrame;
+@property(nonatomic) CFTimeInterval portraitCanvasTransitionUntil;
+@property(nonatomic) BOOL presentationTimingKnown;
++ (NSDictionary *)portraitPresentation;
 @property(nonatomic) BOOL portraitExternal;
 @property(nonatomic) BOOL landscapeExternal;
 @property(nonatomic) BOOL landscapeMove;
@@ -116,13 +129,32 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 - (void)stopClientObservation;
 - (void)observeClient;
 - (void)dismissKeyboard;
+- (BOOL)layoutKeyboardWithoutAnimation;
 - (BOOL)layoutKeyboard;
 - (BOOL)hasVerifiedAttachment;
 - (BOOL)externalKeyboardVisible;
 - (BOOL)mixedOrientationFloating;
 - (BOOL)keyboardMovable;
+- (void)rejectExternal:(NSString *)reason;
+- (BOOL)znsPortraitPresentationEligible;
+- (BOOL)znsPortraitKeyboardContinuity;
+- (void)znsBeginPortraitGeometryRefresh;
+- (BOOL)znsDeferPortraitSystemHide;
+- (void)znsClientWillHide;
+- (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase;
+- (void)znsClientDidHide;
+- (void)znsReparentForNativeKeyboardUpdate;
+- (void)znsApplyNativeShowResult:(BOOL)result inputPresent:(BOOL)inputPresent;
+- (void)znsAcceptClientGeometry:(CGRect)region canvas:(CGSize)canvas valid:(BOOL)valid focused:(BOOL)focused;
 @end
 
+static NSDictionary *ZNSPortraitRestoreTiming;
+static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner);
+static BOOL ZNSKeyboardMatchesFocus(ZNSKeyboardPlacement *owner);
+#include "ZNSPortraitVisualEvent.inc"
+// Weak: a removed/replaced placement must never keep a floating scene alive.
+static __weak ZNSKeyboardPlacement *ZNSLastPortraitPresentationOwner;
+#include "ZNSPortraitVisibilityEvent.inc"
 static void ZNSPublishKeyboardVisibility(void) {
     // Coalesce restore/re-attach during one UIKit layout; do not re-enter the
     // manager from inside a setFrame/show hook or publish transient detachments.
@@ -131,11 +163,41 @@ static void ZNSPublishKeyboardVisibility(void) {
     if (queued) return;
     queued=YES;
     dispatch_async(dispatch_get_main_queue(),^{
+      // Client crop changes enqueue restore before reconcile. A second queue
+      // turn lets that already-enqueued reconcile replace the surface first.
+      dispatch_async(dispatch_get_main_queue(),^{
         queued=NO;
+        static NSDictionary *lastPresentation;
+        NSDictionary *presentation=[ZNSKeyboardPlacement portraitPresentation];
+        // Retry unchanged presentations when manager readiness/layoutInFlight
+        // changes. The floating-view method is idempotent: no repeated animation.
+        static BOOL lastEnded;
+        ZNSKeyboardPlacement *previous=ZNSLastPortraitPresentationOwner;
+        BOOL continuity=!presentation && lastPresentation && previous &&
+            [previous.bundleIdentifier isEqual:lastPresentation[@"bundle"]] &&
+            [previous znsPortraitKeyboardContinuity];
+        BOOL ended=!presentation && !continuity && [ZNSPortraitRestoreTiming[@"ended"] boolValue];
+        if (presentation || lastPresentation || (ended && !lastEnded)) {
+            // An absent candidate is not DidHide: the host/window or the
+            // converted frame can disappear while the App still reports shown.
+            NSDictionary *event=ZNSPortraitVisibilityEvent(presentation,lastPresentation,
+                ZNSPortraitRestoreTiming,continuity);
+            static CFTimeInterval lastUnknownDiagnostic;
+            if (continuity && CACurrentMediaTime()-lastUnknownDiagnostic>2) {
+                lastUnknownDiagnostic=CACurrentMediaTime();
+                os_log(ZNSLog(),"P6_RESUME_UNKNOWN reason=transient-presentation");
+            }
+            // Retain proof across multiple nil samples until a credible end;
+            // otherwise a second remount event could use stale hide timing.
+            if (!continuity) lastPresentation=presentation;
+            [NSNotificationCenter.defaultCenter postNotificationName:ZNSPortraitKeyboardGeometryDidChangeNotification object:nil userInfo:event];
+        }
+        lastEnded=ended;
         NSString *bundle=[ZNSKeyboardPlacement visibleExternalKeyboardBundleIdentifier];
         if ((!lastBundle && !bundle) || [lastBundle isEqualToString:bundle]) return;
         lastBundle=[bundle copy];
         [NSNotificationCenter.defaultCenter postNotificationName:ZNSExternalKeyboardVisibilityDidChangeNotification object:nil];
+      });
     });
 }
 
@@ -189,7 +251,7 @@ static BOOL ZNSKeyboardShow(id delegate,SEL cmd,id input,id placement,id scene) 
     if (!NSThread.isMainThread) return ZNSKeyboardOriginalShow(delegate,cmd,input,placement,scene);
     // Restore before UIKit replaces a surface. Always preserve original result.
     for (ZNSKeyboardPlacement *owner in ZNSKeyboardOwners.allObjects) {
-        if (owner.keyboard) [owner restore];
+        if (owner.keyboard) [owner znsReparentForNativeKeyboardUpdate];
         owner.geometryKeyboard=nil; owner.geometryDelegate=nil;
     }
     [ZNSKeyboardDelegates removeAllObjects];
@@ -220,8 +282,7 @@ static BOOL ZNSKeyboardShow(id delegate,SEL cmd,id input,id placement,id scene) 
         os_log(ZNSLog(),"keyboard show result=%d input=%d window=%d layers=%lu complete=%d; original presentation preserved",result,ZNSKeyboardInputPresent(input),[nativeWindow isKindOfClass:UIWindow.class],(unsigned long)created.count,complete);
     }
     for (ZNSKeyboardPlacement *owner in ZNSKeyboardOwners.allObjects) {
-        if (!owner.dismissPending && !owner.explicitlyDismissed && ZNSKeyboardMatchesFocus(owner))
-            owner.keyboardHidden=!result || !ZNSKeyboardInputPresent(input);
+        [owner znsApplyNativeShowResult:result inputPresent:ZNSKeyboardInputPresent(input)];
         [owner schedule];
     }
     return result;
@@ -282,7 +343,7 @@ static void ZNSKeyboardSetFrame(UIView *view,SEL cmd,CGRect frame) {
     // Never change unowned keyboards. UIKit retains its original display path.
     ZNSKeyboardPlacement *owner=NSThread.isMainThread?ZNSOwnerForKeyboard(view):nil;
     BOOL preserve=owner && !owner.mutating && owner.keyboard==view && owner.dismissPending;
-    if (owner && !owner.mutating && owner.keyboard==view && !preserve) [owner restore];
+    if (owner && !owner.mutating && owner.keyboard==view && !preserve) [owner znsReparentForNativeKeyboardUpdate];
     ZNSKeyboardOriginalFrame(view,cmd,frame);
     // A source-canvas frame cannot be used unchanged inside our external crop.
     // During dismissal keep that crop, without a restore/re-attach round trip.
@@ -384,11 +445,26 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     return 0;
 }
 @implementation ZNSKeyboardPlacement
++ (NSDictionary *)portraitPresentation {
+    ZNSKeyboardPlacement *found=nil;
+    for (ZNSKeyboardPlacement *owner in ZNSKeyboardOwners.allObjects) {
+        if (![owner znsPortraitPresentationEligible]) continue;
+        if (found) return nil;
+        found=owner;
+    }
+    if (!found) return nil;
+    NSValue *frame=[NSValue valueWithCGRect:found.portraitKeyboardFrame];
+    ZNSLastPortraitPresentationOwner=found;
+    return @{@"bundle":found.bundleIdentifier, @"frame":frame, @"window":found.host.window,
+        @"continuity":@([found znsPortraitKeyboardContinuity]),
+        @"duration":@(found.presentationTimingKnown?found.presentationDuration:0.25),
+        @"options":@(found.presentationOptions), @"identity":@[found.bundleIdentifier,frame,found.host.window]};
+}
 + (ZNSKeyboardPlacement *)visibleExternalOwner {
     if (!NSThread.isMainThread) return nil;
     ZNSKeyboardPlacement *found=nil;
     for (ZNSKeyboardPlacement *owner in ZNSKeyboardOwners.allObjects) {
-        if (![owner externalKeyboardVisible]) continue;
+        if (owner.portraitExpansion || ![owner externalKeyboardVisible]) continue;
         if (found) return nil; // Ambiguous: never choose another App by order.
         found=owner;
     }
@@ -449,6 +525,40 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                     [owner schedule];
                     return;
                 }
+                NSNumber *animationDuration=note.userInfo[UIKeyboardAnimationDurationUserInfoKey];
+                NSNumber *animationCurve=note.userInfo[UIKeyboardAnimationCurveUserInfoKey];
+                if ([animationDuration isKindOfClass:NSNumber.class] && isfinite(animationDuration.doubleValue)) {
+                    owner.presentationTimingKnown=YES;
+                    owner.presentationDuration=MAX(0,MIN(0.6,animationDuration.doubleValue));
+                    owner.presentationOptions=(UIViewAnimationOptions)((NSUInteger)([animationCurve isKindOfClass:NSNumber.class]?MAX(0,MIN(7,animationCurve.integerValue)):0)<<16);
+                }
+                if (hide && owner.portraitExpansion && owner.clientPID>0 && owner.clientPID==ZNSKeyboardClientPID(owner)) {
+                    ZNSClientKeyboardPhase phase=ZNSReadClientKeyboardPhase(owner.clientPID);
+                    if (phase==ZNSClientKeyboardWillHide || phase==ZNSClientKeyboardHidden) {
+                        [owner znsAcceptClientPhase:phase]; return;
+                    }
+                }
+                if (hide && [owner znsDeferPortraitSystemHide]) {
+                    [owner rejectExternal:@"P3_SYSTEM_HIDE_DURING_REPARENT"];
+                    [owner schedule]; return;
+                }
+                if (hide && owner.portraitExpansion && !owner.dismissPending) {
+                    if ([note.name isEqual:UIKeyboardWillHideNotification]) {
+                        // SpringBoard's native will-hide can be emitted by a
+                        // surface reparent. The owning App's PID bridge carries
+                        // the credible phase/timing; do not collapse on this
+                        // provisional signal and leave the input bar alone.
+                        [owner rejectExternal:@"P3_SYSTEM_WILL_HIDE_AWAIT_CLIENT"];
+                        [owner schedule]; return;
+                    }
+                    if (owner.clientKeyboardWillHide ||
+                        ZNSKeyboardInputPresent(ZNSKeyboardObject(ZNSActiveKeyboardDelegate(),@"inputViews"))) {
+                        [owner rejectExternal:@"P3_SYSTEM_DID_HIDE_AWAIT_CLIENT"];
+                        [owner schedule]; return;
+                    }
+                    // Bridge unavailable only after focus/input actually ended.
+                    [owner znsClientDidHide]; [owner schedule]; return;
+                }
                 if (owner.dismissPending) {
                     // Keep the external surface in place through will-hide/frame
                     // changes. Only the owning App's did-hide completes dismissal.
@@ -460,7 +570,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                     owner.keyboardHidden=YES; owner.hiddenAt=CACurrentMediaTime();
                     owner.frameDelegate=nil; owner.reportedKeyboardFrame=CGRectZero;
                     owner.dismissPending=NO; owner.dismissGeneration++;
-                    owner.presentationDuration=0;
+                    // Preserve will-hide timing for the paired window restoration.
                     [owner clearShowProof]; [owner restore]; [owner schedule];
                 }
                 else {
@@ -475,6 +585,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                             // Emoji/prediction/accessory layout changed; an old
                             // crop is no longer valid. Translation alone is not
                             // a layout change and never triggers this path.
+                            [owner znsBeginPortraitGeometryRefresh];
                             [owner restore];
                             owner.geometryKeyboard=nil; owner.geometryDelegate=nil;
                         }
@@ -496,6 +607,8 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     return self;
 }
 - (void)clearShowProof {
+    self.portraitCanvasTransitionUntil=0;
+    self.portraitKeyboardVisibleLatch=NO;
     self.geometryKeyboard=nil; self.geometryDelegate=nil;
     self.geometryBounds=CGRectZero; self.geometryContent=CGRectZero;
     for (UIView *view in ZNSKeyboardShowProof.keyEnumerator.allObjects)
@@ -506,6 +619,8 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     self.clientTokens=nil; self.clientPID=0;
     self.clientKeyboardRegion=CGRectZero; self.clientKeyboardCanvas=CGSizeZero;
     self.clientVisibilityKnown=NO; self.clientKeyboardShown=NO;
+    self.clientKeyboardWillHide=NO; self.portraitKeyboardVisibleLatch=NO;
+    self.portraitKeyboardVisualPhaseGeneration++;
     self.dismissGeneration++; self.dismissPending=NO; self.explicitlyDismissed=NO;
 }
 - (void)observeClient {
@@ -515,65 +630,27 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     if (!pid || self.invalidated) return;
     self.clientPID=pid; self.clientTokens=[NSMutableArray new];
     __weak typeof(self) weakSelf=self;
-    for (NSString *event in @[@"shown",@"hidden",@"hide-finished",@"geometry-changed"]) {
+    for (NSString *event in @[@"shown",@"will-hide",@"hidden",@"hide-finished",@"geometry-changed"]) {
         int token=0;
         NSString *name=ZNSKeyboardClientEvent(pid,event);
         uint32_t status=notify_register_dispatch(name.UTF8String,&token,dispatch_get_main_queue(),^(int unused){
             (void)unused;
             ZNSKeyboardPlacement *owner=weakSelf;
             if (!owner || owner.invalidated || owner.clientPID!=pid || ZNSKeyboardClientPID(owner)!=pid) return;
-            BOOL focused=ZNSKeyboardMatchesFocus(owner);
-            if ([event isEqualToString:@"hide-finished"]) {
-                if (!owner.dismissPending) return;
-                owner.dismissPending=NO; owner.dismissGeneration++;
-                owner.keyboardHidden=YES; owner.hiddenAt=CACurrentMediaTime();
-                owner.clientVisibilityKnown=YES; owner.clientKeyboardShown=NO;
-                owner.reportedKeyboardFrame=CGRectZero; owner.frameDelegate=nil;
-                [owner clearShowProof]; [owner restore];
-                return;
+            NSTimeInterval duration=0; UIViewAnimationOptions options=0;
+            if (ZNSReadClientKeyboardAnimation(pid,&duration,&options)) {
+                owner.presentationDuration=duration; owner.presentationOptions=options;
+                owner.presentationTimingKnown=YES;
             }
-            if (owner.dismissPending) {
-                if ([event isEqualToString:@"hidden"]) {
-                    owner.keyboardHidden=YES; owner.hiddenAt=CACurrentMediaTime();
-                    owner.clientVisibilityKnown=YES; owner.clientKeyboardShown=NO;
-                }
-                // A transient frame/show while dismissing must not remount it.
-                return;
-            }
-            if ([event isEqualToString:@"geometry-changed"]) {
-                if (owner.explicitlyDismissed) return;
+            ZNSClientKeyboardPhase phase=ZNSReadClientKeyboardPhase(pid);
+            [owner znsAcceptClientPhase:phase];
+            if (phase==ZNSClientKeyboardWillHide || phase==ZNSClientKeyboardHidden) return;
+            if ([event isEqualToString:@"geometry-changed"] && !owner.dismissPending && !owner.explicitlyDismissed) {
                 CGRect region=CGRectZero; CGSize canvas=CGSizeZero;
                 BOOL valid=ZNSReadClientKeyboardGeometry(pid,&region,&canvas);
-                if (!CGRectEqualToRect(region,owner.clientKeyboardRegion) || !CGSizeEqualToSize(canvas,owner.clientKeyboardCanvas)) {
-                    [owner restore];
-                    owner.geometryKeyboard=nil; owner.geometryDelegate=nil;
-                    owner.clientKeyboardRegion=region; owner.clientKeyboardCanvas=canvas;
-                }
-                if (valid && focused && !owner.dismissPending) {
-                    owner.clientVisibilityKnown=YES; owner.clientKeyboardShown=YES; owner.keyboardHidden=NO;
-                }
-                [owner schedule]; return;
+                [owner znsAcceptClientGeometry:region canvas:canvas valid:valid focused:ZNSKeyboardMatchesFocus(owner)];
             }
-            BOOL hidden=[event isEqualToString:@"hidden"];
-            owner.clientVisibilityKnown=YES; owner.clientKeyboardShown=!hidden;
-            if (hidden) {
-                if (!focused && !owner.keyboard && !owner.dismissPending) return;
-                owner.keyboardHidden=YES; owner.hiddenAt=CACurrentMediaTime();
-                owner.dismissPending=NO; owner.dismissGeneration++;
-                owner.reportedKeyboardFrame=CGRectZero; owner.frameDelegate=nil;
-                [owner clearShowProof];
-                [owner restore];
-            } else {
-                // A process notification is only a scheduling hint, never proof
-                // of scene/surface ownership. findKeyboard still proves both.
-                // Keep the hint across a temporary Notification Center focus
-                // loss; the timer will retry only after exact focus returns.
-                if (focused && !owner.dismissPending) {
-                    owner.explicitlyDismissed=NO;
-                    owner.keyboardHidden=NO;
-                }
-                [owner schedule];
-            }
+
         });
         if (status==NOTIFY_STATUS_OK) [self.clientTokens addObject:@(token)];
     }
@@ -626,6 +703,19 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     self.host=host; self.canvas=canvas; self.suspended=NO;
     [self schedule];
 }
+- (uint64_t)znsRequestRestoreSize:(CGSize)size {
+    if (self.invalidated || self.clientPID<=0 || self.clientPID!=ZNSKeyboardClientPID(self)) return 0;
+    return ZNSRequestClientRestoreSize(self.clientPID,size);
+}
+- (BOOL)znsRestoreSizeMatches:(uint64_t)request {
+    return !self.invalidated && self.clientPID>0 && self.clientPID==ZNSKeyboardClientPID(self) &&
+        ZNSClientRestoreSizeMatches(self.clientPID,request);
+}
+- (void)requestPortraitClientGeometry {
+    if (self.clientPID>0 && self.clientPID==ZNSKeyboardClientPID(self))
+        notify_post(ZNSKeyboardClientEvent(self.clientPID,@"geometry.request").UTF8String);
+}
+#include "ZNSPortraitPlacement.inc"
 - (void)configurePortraitExternal:(BOOL)portrait landscapeExternal:(BOOL)landscape move:(BOOL)move {
     self.portraitExternal=portrait; self.landscapeExternal=landscape;
     self.landscapeMove=move;
@@ -684,49 +774,14 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         owner.queued=NO; [owner reconcileSafely];
     });
 }
-- (void)restore {
-    if (self.mutating) return;
-    self.mutating=YES;
-    self.nativeScreenKeyboard=NO;
-    [self.keyboardContainer.layer removeAllAnimations];
-    [self.dragHandle.layer removeAllAnimations];
-    UIView *keyboard=self.keyboard,*parent=self.originalParent;
-    self.window.hidden=YES; self.window.keyboard=nil;
-    // If UIKit took the view elsewhere already, do not steal it back or write
-    // stale geometry into a new presentation. Only undo our own attachment.
-    @try {
-    if (keyboard && (keyboard.superview==self.keyboardContainer || !keyboard.superview)) {
-        [keyboard removeFromSuperview];
-        keyboard.transform=self.savedTransform;
-        keyboard.bounds=self.savedBounds; keyboard.center=self.savedCenter;
-        keyboard.autoresizingMask=self.savedAutoresizing;
-        keyboard.translatesAutoresizingMaskIntoConstraints=self.savedTranslates;
-        if (parent) {
-            [parent insertSubview:keyboard atIndex:MIN(self.originalIndex,parent.subviews.count)];
-            [NSLayoutConstraint activateConstraints:self.savedConstraints?:@[]];
-        }
-        os_log(ZNSLog(),"keyboard external attachment restored parentAlive=%d",parent!=nil);
-    }
-    } @catch (NSException *exception) {
-        self.invalidated=YES;
-        [self.timer invalidate]; self.timer=nil;
-        os_log_error(ZNSLog(),"keyboard restore exception=%{public}@; placement disabled for this session",exception.name);
-    } @finally {
-        self.keyboard=nil; self.originalParent=nil;
-        self.window=nil; self.keyboardContainer=nil; self.dragHandle=nil;
-        self.savedConstraints=nil;
-        self.attachedDelegate=nil; self.independent=NO;
-        self.mutating=NO;
-        ZNSPublishKeyboardVisibility();
-    }
-}
+#include "ZNSKeyboardRestore.inc"
 - (void)rejectExternal:(NSString *)reason {
     CFTimeInterval now=CACurrentMediaTime();
     BOOL same=[self.lastRejectionReason isEqualToString:reason];
     if (now-self.lastRejectionDiagnostic<(same?8:1)) return;
     self.lastRejectionDiagnostic=now; self.lastRejectionReason=reason;
     // Reasons are fixed internal labels, never App identifiers or typed text.
-    os_log(ZNSLog(),"keyboard external rejected reason=%{public}@ external=%d active=%d suspended=%d hidden=%d dismiss=%d hooks=%d hostWindow=%d focus=%d clientKnown=%d clientShown=%d",reason,self.external,self.active,self.suspended,self.keyboardHidden,self.dismissPending,ZNSKeyboardHookReady,self.host.window!=nil,ZNSKeyboardMatchesFocus(self),self.clientVisibilityKnown,self.clientKeyboardShown);
+    os_log(ZNSLog(),"keyboard external rejected reason=%{public}@ external=%d active=%d suspended=%d hidden=%d dismiss=%d hooks=%d hostWindow=%d focus=%d clientKnown=%d clientShown=%d canvas=%.1fx%.1f clientCanvas=%.1fx%.1f keyboard=%.1fx%.1f grace=%d",reason,self.external,self.active,self.suspended,self.keyboardHidden,self.dismissPending,ZNSKeyboardHookReady,self.host.window!=nil,ZNSKeyboardMatchesFocus(self),self.clientVisibilityKnown,self.clientKeyboardShown,self.canvas.width,self.canvas.height,self.clientKeyboardCanvas.width,self.clientKeyboardCanvas.height,self.portraitKeyboardFrame.size.width,self.portraitKeyboardFrame.size.height,self.portraitCanvasTransitionUntil>now);
 }
 - (UIView *)findKeyboard {
     // Bounded traversal of our own scene only; never scan another App/window.
@@ -817,6 +872,16 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     return CGRectOffset(rect,self.savedBounds.origin.x,self.savedBounds.origin.y);
 }
 - (BOOL)layoutKeyboard {
+    if (!self.portraitExpansion) return [self layoutKeyboardWithoutAnimation];
+    __block BOOL ok=NO;
+    NSTimeInterval duration=self.presentationTimingKnown?self.presentationDuration:0.25;
+    [UIView animateWithDuration:UIAccessibilityIsReduceMotionEnabled()?0:duration delay:0
+        options:self.presentationOptions|UIViewAnimationOptionBeginFromCurrentState|UIViewAnimationOptionAllowUserInteraction animations:^{
+            ok=[self layoutKeyboardWithoutAnimation];
+        } completion:nil];
+    return ok;
+}
+- (BOOL)layoutKeyboardWithoutAnimation {
     UIView *keyboard=self.keyboard;
     if (!keyboard || !self.window || !self.keyboardContainer) return NO;
     CGRect extent=CGRectApplyAffineTransform(self.contentRect,self.presentationTransform);
@@ -854,6 +919,12 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     CGPoint center=CGPointMake(screen.size.width/2,maxY);
     if (self.hasDragged) center=CGPointMake(self.normalizedPosition.x*screen.size.width,self.normalizedPosition.y*screen.size.height);
     center.x=MAX(minX,MIN(maxX,center.x)); center.y=MAX(minY,MIN(maxY,center.y));
+    self.portraitKeyboardFrame=CGRectMake(center.x-width/2,center.y-height/2,width,height);
+    CGRect target;
+    if (self.portraitExpansion && !ZNSPortraitKeyboardTarget(self.portraitKeyboardFrame,screen,safe.top,&target)) {
+        [self rejectExternal:@"P3_TARGET_GEOMETRY_REJECT"];
+        return NO;
+    }
     self.keyboardContainer.bounds=CGRectMake(0,0,width,height);
     self.keyboardContainer.center=center;
     self.dragHandle.hidden=!movable;
@@ -941,7 +1012,11 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         (orientation!=self.lastOrientation || !CGSizeEqualToSize(screenSize,self.lastScreenSize));
     self.lastOrientation=orientation; self.lastScreenSize=screenSize;
     BOOL landscape=[self deviceLandscape];
-    BOOL external=[self mixedOrientationFloating] ||
+    self.portraitExpansion=!landscape && !self.portraitExternal && ![self mixedOrientationFloating] &&
+        self.canvas.height>self.canvas.width;
+    // The inner portrait presentation shares the proven surface transport,
+    // but never opts into external outside-tap dismissal or movable handles.
+    BOOL external=self.portraitExpansion || [self mixedOrientationFloating] ||
         ZNSKeyboardExternalForDirection(landscape,self.portraitExternal,self.landscapeExternal);
     if (rotated || external!=self.external) {
         [self restore];
@@ -955,6 +1030,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     self.external=external;
     if (![self keyboardMovable]) self.hasDragged=NO;
     if (rotated) { [self schedule]; return; }
+    if (self.clientKeyboardWillHide) return;
     if (self.dismissPending) {
         // Freeze only our reparent/layout work, not UIKit input or animation.
         // Losing ownership, leaving the main window, rotation or switching to
@@ -1151,7 +1227,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         CGFloat travel=self.keyboardContainer.bounds.size.height;
         self.keyboardContainer.transform=CGAffineTransformMakeTranslation(0,travel);
         self.dragHandle.transform=CGAffineTransformMakeTranslation(0,travel);
-        NSTimeInterval duration=self.presentationDuration>0?self.presentationDuration:0.25;
+        NSTimeInterval duration=self.presentationTimingKnown?self.presentationDuration:0.25;
         [UIView animateWithDuration:duration delay:0 options:self.presentationOptions|UIViewAnimationOptionBeginFromCurrentState|UIViewAnimationOptionAllowUserInteraction animations:^{
             container.transform=CGAffineTransformIdentity;
             handle.transform=CGAffineTransformIdentity;

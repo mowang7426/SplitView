@@ -1,0 +1,10 @@
+Package: com.zengniu.splitview
+Name: 曾牛-分屏🐮
+Version: 0.7.66+keyboard11
+Architecture: iphoneos-arm64e
+Description: Live app windows; temporary native-width portrait input scene.
+Maintainer: ZengNiu
+Author: ZengNiu
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader, firmware (>= 16.0)
+Icon: https://ys8smjzty4-dot.github.io/ZengNiupackages/depictions/com.zengniu.splitview/icon.png

@@ -1,3 +1,9 @@
+# RootHide build outputs and pinned toolchain checkout
+.theos/
+packages/
+build/
+theos-roothide/
+
 tools/ReadHeaders
 tools/SwitcherABIProbe
 tools/SwitcherABIProbe.txt

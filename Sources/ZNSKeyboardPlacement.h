@@ -3,6 +3,9 @@
 // Posted on the main queue after a real visibility/owner change. Observers may
 // update their local input shield, but must not acquire keyboard focus.
 FOUNDATION_EXPORT NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification;
+FOUNDATION_EXPORT NSNotificationName const ZNSPortraitKeyboardGeometryDidChangeNotification;
+// Visual-only phase, always delivered on a later main-queue turn.
+FOUNDATION_EXPORT NSNotificationName const ZNSPortraitKeyboardWillHideVisualNotification;
 
 // Placement only. Never acquires focus, sends text or calls SBS focus services.
 @interface ZNSKeyboardPlacement : NSObject
@@ -22,6 +25,13 @@ FOUNDATION_EXPORT NSNotificationName const ZNSExternalKeyboardVisibilityDidChang
 - (void)setPlacementActive:(BOOL)active;
 - (void)updateScene:(id)scene bundleIdentifier:(NSString *)identifier;
 - (void)updateHost:(UIView *)host canvas:(CGSize)canvas;
+// Arm BEFORE host mutation: private setters may synchronously emit hide/frame.
+- (void)znsBeginPortraitGeometryRefresh;
+// Same scene/host and responder: invalidate only the old crop, not focus proof.
+- (void)updateTemporaryPortraitCanvas:(CGSize)canvas;
+- (uint64_t)znsRequestRestoreSize:(CGSize)size;
+- (BOOL)znsRestoreSizeMatches:(uint64_t)request;
+- (void)requestPortraitClientGeometry;
 - (void)suspend;
 - (void)invalidate;
 @end

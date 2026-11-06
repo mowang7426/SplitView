@@ -1,11 +1,16 @@
 #import <UIKit/UIKit.h>
+@class ZNSKeyboardPlacement;
 @interface ZNSSceneSession : NSObject
+// Identity check for queued visual-only keyboard events; never mutate from UI.
+@property(nonatomic,strong,readonly) ZNSKeyboardPlacement *keyboardPlacement;
 @property(nonatomic,copy,readonly) NSString *bundleIdentifier;
 // May be replaced after an acknowledged orientation change while the App scene
 // itself stays alive. Read again in resize completion; do not cache its identity.
 @property(nonatomic,strong,readonly) UIView *hostView;
 @property(nonatomic,readonly) BOOL landscape;
 @property(nonatomic,readonly) CGSize canvasSize;
+// Original native canvas retained until the confirmed handoff. Read-only visual endpoint.
+@property(nonatomic,readonly) CGSize temporaryPortraitCanvas;
 // Current direction's requested placement: external or window. Applied reports
 // only an actual external attachment, never verified text delivery.
 @property(nonatomic,copy,readonly) NSString *keyboardMode;
@@ -40,6 +45,20 @@
 - (BOOL)resize:(CGSize)size landscape:(BOOL)landscape completion:(void (^)(BOOL success, NSString *message))completion;
 // Compatibility entry point with the same asynchronous acceptance semantics.
 - (BOOL)resize:(CGSize)size landscape:(BOOL)landscape;
+// Temporary portrait input presentation, frame in the overlay's screen space.
+// Changes this hosted scene's frame/reference size only. YES means submitted,
+// not rendered. Completion and timeout both verify applied scene/host state;
+// the failure callback runs only after a real mismatch rollback. Normal
+// resize/teardown supersedes pending temporary work.
+- (BOOL)applyTemporaryPortraitFrame:(CGRect)frame failure:(void (^)(void))failure;
+// Cleared/called inside the existing no-animation handoff before host dimensions change.
+@property(nonatomic,copy) void (^znsPortraitRestorePrepareVisual)(void);
+@property(nonatomic,readonly) BOOL znsPortraitHandoffInFlight;
+@property(nonatomic,readonly) BOOL znsPortraitRestorePending;
+- (BOOL)znsRestorePortraitAfterHide:(void (^)(BOOL success))completion;
+- (void)znsCancelPortraitRestore;
+- (BOOL)restoreTemporaryPortraitCanvas;
+- (BOOL)restoreTemporaryPortraitCanvasWithDuration:(NSTimeInterval)duration options:(NSUInteger)options;
 // Eligibility only; never starts SBS automatically. NO revokes a manual trial.
 - (void)setKeyboardFocusActive:(BOOL)active;
 // Reconcile the host footprint after container layout; no scene transaction,

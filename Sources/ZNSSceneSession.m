@@ -262,6 +262,24 @@ static BOOL ZNSHostCanvasAPI(UIView *host) {
     if (ZNSHostCombinedCanvasAPI(host) || ZNSHostSeparateCanvasAPI(host)) return YES;
     return ZNSCompatibilityFailure(host,NSSelectorFromString(@"_updateReferenceSize:andOrientation:"),@"H2：亦无成对尺寸/方向setter");
 }
+static BOOL ZNSGeometryScalarNear(CGFloat actual,CGFloat desired) {
+    return isfinite(actual) && isfinite(desired) && fabs(actual-desired)<=0.5;
+}
+static BOOL ZNSGeometrySizeNear(CGSize actual,CGSize desired) {
+    return ZNSGeometryScalarNear(actual.width,desired.width) && ZNSGeometryScalarNear(actual.height,desired.height);
+}
+static BOOL ZNSGeometryRectNear(CGRect actual,CGRect desired) {
+    return ZNSGeometryScalarNear(actual.origin.x,desired.origin.x) && ZNSGeometryScalarNear(actual.origin.y,desired.origin.y) &&
+        ZNSGeometrySizeNear(actual.size,desired.size);
+}
+static BOOL ZNSHostCanvasMatches(UIView *host,CGSize size,NSInteger orientation) {
+    if (!ZNSHostCanvasAPI(host)) return NO;
+    CGSize reference=((CGSize(*)(id,SEL))objc_msgSend)(host,NSSelectorFromString(@"referenceSize"));
+    NSInteger direction=((NSInteger(*)(id,SEL))objc_msgSend)(host,NSSelectorFromString(@"orientation"));
+    CGRect projection=CGRectApplyAffineTransform((CGRect){CGPointZero,host.bounds.size},host.transform);
+    CGSize projected=CGSizeMake(fabs(projection.size.width),fabs(projection.size.height));
+    return direction==orientation && ZNSGeometrySizeNear(reference,size) && ZNSGeometrySizeNear(projected,size);
+}
 static void ZNSLogHostGeometry(UIView *host,const char *stage,CGSize expected,NSInteger orientation) {
     if (!host) return;
     CGRect bounds=host.bounds;
@@ -354,6 +372,7 @@ static void ZNSInstallSceneLeaseHook(void) {
 @end
 
 @interface ZNSSceneSession ()
+- (BOOL)znsTemporaryPortraitStateMatchesFrame:(CGRect)frame;
 @property(nonatomic,strong) ZNSSceneHostRequester *hostRequester;
 @property(nonatomic,copy,readwrite) NSString *bundleIdentifier;
 @property(nonatomic,strong,readwrite) UIView *hostView;
@@ -379,6 +398,20 @@ static void ZNSInstallSceneLeaseHook(void) {
 @property(nonatomic) BOOL changedSettings;
 @property(nonatomic,readwrite) BOOL layoutInFlight;
 @property(nonatomic) NSUInteger layoutGeneration;
+- (void)znsPollPortraitRestore:(NSUInteger)generation attempt:(NSUInteger)attempt;
+- (void)znsFailPortraitRestore:(NSUInteger)generation;
+@property(nonatomic,readwrite) BOOL znsPortraitHandoffInFlight;
+@property(nonatomic,readwrite) BOOL znsPortraitRestorePending;
+@property(nonatomic) uint64_t znsPortraitRestoreRequest;
+@property(nonatomic) CGRect znsPortraitRestoreExpandedFrame;
+@property(nonatomic,copy) void (^znsPortraitRestoreCompletion)(BOOL);
+@property(nonatomic,strong) id temporaryPortraitSettings;
+@property(nonatomic) CGSize temporaryPortraitCanvas;
+@property(nonatomic) CGRect temporaryPortraitFrame;
+@property(nonatomic) NSUInteger temporaryPortraitGeneration;
+@property(nonatomic) BOOL temporaryPortraitPending;
+@property(nonatomic) BOOL temporaryPortraitRestoring;
+@property(nonatomic,copy) void (^temporaryPortraitFailure)(void);
 @property(nonatomic,copy) void (^layoutCompletion)(BOOL,NSString *);
 @property(nonatomic,copy) void (^completion)(BOOL,NSString *);
 @property(nonatomic,strong) dispatch_source_t processExitSource;
@@ -387,6 +420,9 @@ static void ZNSInstallSceneLeaseHook(void) {
 @property(nonatomic,readwrite) BOOL clientProcessExited;
 @end
 
+static void ZNSRunPortraitHandoff(void (^block)(void)) {
+    [UIView performWithoutAnimation:block];
+}
 static BOOL ZNSValidCanvasSize(CGSize size) {
     return isfinite(size.width) && isfinite(size.height) && size.width>0 && size.height>0;
 }
@@ -400,6 +436,7 @@ static id ZNSProcessExitObject(id object,NSString *name) {
 }
 
 @implementation ZNSSceneSession
+#include "ZNSPortraitScene.inc"
 - (void)cancelProcessExitObservation {
     ++self.processExitGeneration;
     dispatch_source_t source=self.processExitSource;
@@ -487,7 +524,7 @@ static id ZNSProcessExitObject(id object,NSString *name) {
     dispatch_activate(source);
 }
 - (void)layoutHostInCanvas {
-    if(self.stopped || self.layoutInFlight || !self.hostView) return;
+    if(self.stopped || self.layoutInFlight || self.znsPortraitRestorePending || !self.hostView) return;
     [self.hostView layoutIfNeeded];
     ZNSAlignHostCanvas(self.hostView,self.canvasSize);
 }
@@ -777,6 +814,12 @@ static id ZNSProcessExitObject(id object,NSString *name) {
         ZNSLastSceneFailure=@"布局请求状态无效：线程、场景、处理中状态或画布尺寸（S0L）";
         return NO;
     }
+    // A normal rotation/resize supersedes any temporary keyboard transaction.
+    // Restore synchronously before capturing previousSize/lease for rollback.
+    if (![self restoreTemporaryPortraitCanvas]) {
+        ZNSLastSceneFailure=@"临时输入场景恢复提交失败（TPR）";
+        return NO;
+    }
     SEL update=@selector(updateSettings:withTransitionContext:completion:);
     if (!ZNSSceneUpdateSignature(object_getClass(self.scene),update,5)) {
         ZNSLastSceneFailure=@"Scene completion API missing or ABI incompatible (S2)";
@@ -974,6 +1017,13 @@ static id ZNSProcessExitObject(id object,NSString *name) {
         objc_setAssociatedObject(_scene,&ZNSSceneLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 - (void)releaseHostedSceneLeaseAndKeepAlive {
+    [self znsCancelPortraitRestore];
+    ++self.temporaryPortraitGeneration;
+    self.temporaryPortraitPending=NO;
+    self.temporaryPortraitSettings=nil;
+    self.temporaryPortraitFailure=nil;
+    self.temporaryPortraitCanvas=CGSizeZero;
+    self.temporaryPortraitFrame=CGRectZero;
     self.lease.settings=nil;
     if (self.scene && objc_getAssociatedObject(self.scene,&ZNSSceneLeaseKey)==self.lease)
         objc_setAssociatedObject(self.scene,&ZNSSceneLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);

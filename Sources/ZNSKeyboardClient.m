@@ -7,6 +7,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/log.h>
+#include "ZNSClientRestoreSize.inc"
 
 // Prefer the keyboard's own dismissal action, but only after its current input
 // delegate is proven to be the unique responder in this App. No global action,
@@ -35,10 +36,64 @@ static BOOL ZNSClientDismissNativeKeyboard(UIView *responder) {
     return YES; // dispatched, NOT proof of disappearance
 }
 
+// One atomic word: valid bit, UIKit curve and duration in microseconds.
+// Written BEFORE geometry/visibility posts; no text or responder data is sent.
+static int ZNSClientPhaseToken;
+static BOOL ZNSClientPhaseReady;
+ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) {
+    if (pid<=0) return ZNSClientKeyboardUnknown;
+    int token; uint64_t word=0;
+    if (notify_register_check(ZNSKeyboardClientEvent(pid,@"phase").UTF8String,&token)!=NOTIFY_STATUS_OK) return ZNSClientKeyboardUnknown;
+    BOOL ok=notify_get_state(token,&word)==NOTIFY_STATUS_OK;
+    notify_cancel(token);
+    return ok?(ZNSClientKeyboardPhase)(word&3):ZNSClientKeyboardUnknown;
+}
+static void ZNSClientPublishPhase(ZNSClientKeyboardPhase phase) {
+    if (ZNSClientPhaseReady) {
+        uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
+        notify_set_state(ZNSClientPhaseToken,(stamp<<2)|phase);
+    }
+}
+static int ZNSAnimationToken;
+static BOOL ZNSAnimationReady;
+BOOL ZNSReadClientKeyboardAnimation(pid_t pid,NSTimeInterval *duration,UIViewAnimationOptions *options) {
+    if (pid<=0 || !duration || !options) return NO;
+    int token; uint64_t value=0;
+    if (notify_register_check(ZNSKeyboardClientEvent(pid,@"animation").UTF8String,&token)!=NOTIFY_STATUS_OK) return NO;
+    BOOL ok=notify_get_state(token,&value)==NOTIFY_STATUS_OK;
+    notify_cancel(token);
+    if (!ok || !(value & (1ULL<<63)) || (value & 0xffffffffULL)>600000) return NO;
+    *duration=(value & 0xffffffffULL)/1000000.0;
+    *options=(UIViewAnimationOptions)(((value>>32)&7)<<16);
+    return YES;
+}
+static void ZNSClientPublishAnimation(NSNotification *note) {
+    if (!ZNSAnimationReady || ![note.name containsString:@"Will"]) return;
+    NSNumber *duration=note.userInfo[UIKeyboardAnimationDurationUserInfoKey];
+    NSNumber *curve=note.userInfo[UIKeyboardAnimationCurveUserInfoKey];
+    if (![duration isKindOfClass:NSNumber.class] || !isfinite(duration.doubleValue)) return;
+    uint64_t micros=(uint64_t)(MAX(0,MIN(0.6,duration.doubleValue))*1000000);
+    NSInteger c=[curve isKindOfClass:NSNumber.class]?MAX(0,MIN(7,curve.integerValue)):0;
+    notify_set_state(ZNSAnimationToken,(1ULL<<63)|((uint64_t)c<<32)|micros);
+}
+
 static NSString *const ZNSGeometryFields[]={@"geometry.serial",@"geometry.x",@"geometry.y",@"geometry.w",@"geometry.h",@"geometry.cw",@"geometry.ch"};
 static int ZNSGeometryTokens[7];
+static NSNotification *ZNSLastKeyboardGeometryNote;
+static int ZNSGeometryRequestToken;
 static BOOL ZNSGeometryReady;
 static uint64_t ZNSGeometrySerial;
+static NSUInteger ZNSGeometryRefreshGeneration;
+static void ZNSClientPublishGeometry(NSNotification *note);
+static void ZNSClientRefreshGeometry(NSUInteger generation,NSUInteger attempt) {
+    if (generation!=ZNSGeometryRefreshGeneration || !ZNSLastKeyboardGeometryNote) return;
+    ZNSClientPublishGeometry(ZNSLastKeyboardGeometryNote);
+    // Scene acknowledgment is not proof the App's UIWindow resized yet.
+    // Four bounded re-samples use the original native note, never fake UIKit.
+    if (attempt<4) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.08*(1U<<attempt)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        ZNSClientRefreshGeometry(generation,attempt+1);
+    });
+}
 
 static BOOL ZNSClientGeometryValid(CGRect rect,CGSize canvas) {
     return isfinite(canvas.width) && isfinite(canvas.height) && canvas.width>1 && canvas.height>1 &&
@@ -212,10 +267,15 @@ void ZNSInstallKeyboardClient(void) {
         // or create the recurring menu timer merely because UIKit was loaded.
         if (NSClassFromString(@"SpringBoard") ||
             ![NSBundle.mainBundle.bundlePath.pathExtension isEqualToString:@"app"]) return;
+        ZNSInstallClientRestoreSize();
         static NSMutableArray *observers;
         static int dismissToken;
         observers=[NSMutableArray new];
         NSNotificationCenter *center=NSNotificationCenter.defaultCenter;
+        ZNSClientPhaseReady=notify_register_check(ZNSKeyboardClientEvent(getpid(),@"phase").UTF8String,&ZNSClientPhaseToken)==NOTIFY_STATUS_OK;
+        if (ZNSClientPhaseReady) notify_set_state(ZNSClientPhaseToken,0);
+        ZNSAnimationReady=notify_register_check(ZNSKeyboardClientEvent(getpid(),@"animation").UTF8String,&ZNSAnimationToken)==NOTIFY_STATUS_OK;
+        if (ZNSAnimationReady) notify_set_state(ZNSAnimationToken,0);
         ZNSGeometryReady=YES;
         for (NSUInteger i=0;i<7;i++) {
             if (notify_register_check(ZNSKeyboardClientEvent(getpid(),ZNSGeometryFields[i]).UTF8String,&ZNSGeometryTokens[i])!=NOTIFY_STATUS_OK) {
@@ -237,10 +297,26 @@ void ZNSInstallKeyboardClient(void) {
             id token=[center addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
                 NSNumber *local=note.userInfo[UIKeyboardIsLocalUserInfoKey];
                 if (local && !local.boolValue) return;
-                BOOL hide=[note.name isEqual:UIKeyboardWillHideNotification] || [note.name isEqual:UIKeyboardDidHideNotification];
-                if (hide) ZNSClientWriteGeometry(CGRectZero,CGSizeZero,NO);
-                else ZNSClientPublishGeometry(note);
+                ZNSClientPublishAnimation(note);
+                BOOL willHide=[note.name isEqual:UIKeyboardWillHideNotification];
+                BOOL didHide=[note.name isEqual:UIKeyboardDidHideNotification];
+                BOOL hide=willHide || didHide;
                 BOOL show=[note.name isEqual:UIKeyboardWillShowNotification] || [note.name isEqual:UIKeyboardDidShowNotification];
+                // Publish phase BEFORE any geometry event. A late shown/geometry
+                // callback must never cancel a newer WillHide transaction.
+                if (hide || show) ZNSClientPublishPhase(willHide?ZNSClientKeyboardWillHide:didHide?ZNSClientKeyboardHidden:ZNSClientKeyboardShown);
+                // WillHide carries the only transition timing shared by UIKit,
+                // but is not disappearance. Keep the last valid geometry/live
+                // responder through that transaction; clearing it here made the
+                // App input bar reflow before SpringBoard could shrink its frame.
+                if (didHide) {
+                    ++ZNSGeometryRefreshGeneration;
+                    ZNSLastKeyboardGeometryNote=nil;
+                    ZNSClientWriteGeometry(CGRectZero,CGSizeZero,NO);
+                } else if (!willHide) {
+                    ZNSLastKeyboardGeometryNote=note;
+                    ZNSClientPublishGeometry(note);
+                }
                 if(hide) {
                     [ZNSMenuTimer invalidate]; ZNSMenuTimer=nil; ZNSClientClearMenu();
                 } else if(show && ZNSMenuReady && !ZNSMenuTimer) {
@@ -250,11 +326,22 @@ void ZNSInstallKeyboardClient(void) {
                     }];
                     [NSRunLoop.mainRunLoop addTimer:ZNSMenuTimer forMode:NSRunLoopCommonModes];
                 }
-                if (hide || show) ZNSClientPost(hide?@"hidden":@"shown");
-                if ([note.name isEqual:UIKeyboardDidHideNotification]) ZNSClientPost(@"hide-finished");
+                if (willHide) ZNSClientPost(@"will-hide");
+                else if (didHide) {
+                    ZNSClientPost(@"hidden");
+                    ZNSClientPost(@"hide-finished");
+                } else if (show) ZNSClientPost(@"shown");
             }];
             [observers addObject:token];
         }
+        // A scene frame update need not emit another keyboard notification.
+        // Re-convert the last native SCREEN rectangle through the live window;
+        // never post synthetic UIKeyboard notifications or mutate App insets.
+        notify_register_dispatch(ZNSKeyboardClientEvent(getpid(),@"geometry.request").UTF8String,
+            &ZNSGeometryRequestToken,dispatch_get_main_queue(),^(int token){
+                (void)token;
+                ZNSClientRefreshGeometry(++ZNSGeometryRefreshGeneration,0);
+            });
         NSString *name=ZNSKeyboardClientEvent(getpid(),@"dismiss");
         notify_register_dispatch(name.UTF8String,&dismissToken,dispatch_get_main_queue(),^(int token){
             (void)token;

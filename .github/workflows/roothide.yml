@@ -1,0 +1,62 @@
+name: SplitView RootHide keyboard build
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/portrait-keyboard-expand]
+permissions:
+  contents: read
+env:
+  THEOS: ${{ github.workspace }}/theos-roothide
+  HOMEBREW_NO_AUTO_UPDATE: 1
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+      - uses: actions/checkout@v4
+        with:
+          repository: roothide/theos
+          ref: 3ac89c984ec652fd16bcd91b33ae16de45ce76fa
+          path: theos-roothide
+          submodules: recursive
+      - name: Dependencies and pinned SDK
+        run: |
+          set -euo pipefail
+          brew install ldid dpkg xz
+          git clone --filter=blob:none --no-checkout https://github.com/theos/sdks.git /tmp/zns-sdks
+          git -C /tmp/zns-sdks sparse-checkout set iPhoneOS16.5.sdk
+          git -C /tmp/zns-sdks checkout 0222fd5413cf4b9af096f37b4621afa2688572f7
+          mkdir -p "$THEOS/sdks"
+          cp -R /tmp/zns-sdks/iPhoneOS16.5.sdk "$THEOS/sdks/"
+      - name: Host geometry and regression tests
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcrun clang -Wall -Wextra -Werror tools/PortraitKeyboardTests.c -framework CoreGraphics -lm -o /tmp/PortraitKeyboardTests
+          /tmp/PortraitKeyboardTests | tee build/PortraitKeyboardTests.log
+          xcrun clang -Wall -Wextra -Werror -fobjc-arc tools/PortraitSceneTests.m -framework Foundation -framework CoreGraphics -o /tmp/PortraitSceneTests
+          /tmp/PortraitSceneTests | tee build/PortraitSceneTests.log
+          xcrun clang -Wall -Wextra -Werror -fobjc-arc tools/PortraitEventTests.m -framework Foundation -framework CoreGraphics -o /tmp/PortraitEventTests
+          /tmp/PortraitEventTests | tee build/PortraitEventTests.log
+          python3 tools/portrait_runtime_checks.py | tee build/portrait-runtime-checks.log
+          python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
+          python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
+      - name: Build RootHide package
+        run: |
+          set -euo pipefail
+          sh build.sh 2>&1 | tee build/compile.log
+          sh tools/verify-package.sh | tee build/verification.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: splitview-roothide-keyboard
+          path: |
+            packages/*.deb
+            build/
+          if-no-files-found: error
+          retention-days: 30
