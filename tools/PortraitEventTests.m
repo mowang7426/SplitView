@@ -147,6 +147,7 @@ static id ZNSActiveKeyboardDelegate(void) { return @1; }
 @property(nonatomic) UIViewAnimationOptions presentationOptions;
 @property(nonatomic) BOOL presentationTimingKnown;
 - (BOOL)externalKeyboardVisible;
+- (BOOL (^)(void))znsPortraitHiddenRestoreGuard;
 - (void)restore;
 - (void)schedule;
 - (void)clearShowProof;
@@ -182,6 +183,12 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 @interface ZNSFloatingView : UIView
 @property(nonatomic) BOOL portraitKeyboardExpanded,portraitKeyboardSuppressed,portraitKeyboardRestoring;
 @property(nonatomic) NSUInteger portraitKeyboardRestoreGeneration;
+@property(nonatomic) NSUInteger portraitKeyboardHideRetryGeneration;
+@property(nonatomic) BOOL portraitKeyboardHideRetryActive;
+@property(nonatomic,copy) BOOL (^portraitKeyboardHideRetryGuard)(void);
+- (void)znsAttemptPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token;
+- (void)znsRetryPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token;
+
 @property(nonatomic) BOOL portraitKeyboardVisualRestoring,portraitKeyboardVisualRestoreCompleted,portraitKeyboardVisualFinalizePending,portraitKeyboardVisualReturning;
 @property(nonatomic) NSUInteger portraitKeyboardVisualRestoreGeneration;
 @property(nonatomic) BOOL portraitKeyboardChromeFading;
@@ -275,6 +282,7 @@ static void Publish(ZNSWindowManager *m,ZNSKeyboardPlacement *p,BOOL ended) {
     [m portraitKeyboardGeometryChanged:[NSNotification notificationWithName:@"test" object:nil userInfo:info]];
 }
 #include "PortraitVisualTests.inc"
+#include "PortraitHideRetryTests.inc"
 int main(void) { @autoreleasepool {
     assert(ZNSSceneTestsMain()==0);
     ZNSAnimationEnds=[NSMutableArray new];
@@ -525,7 +533,7 @@ int main(void) { @autoreleasepool {
     assert(ZNSAnimations==beforeAnimations && ZNSWithoutAnimations==beforeWithout+1);
     assert(!v.portraitKeyboardRestoring && !v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,original));
     assert(CGRectIsEmpty(v.portraitKeyboardSavedFrame)); Original(v.session);
-    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests();
+    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests(); HideRetryTests();
     puts("PASS production event chain: legacy explicit force restore preserves duration/options and completion guard; normal DidHide requires client-size confirmation; zero-duration lifecycle restore and rejection retry remain covered. UIKit/layout transport MOCKED; NOT device verified.");
     return 0;
 } }

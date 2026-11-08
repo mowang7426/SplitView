@@ -1,0 +1,15 @@
+# keyboard12 — bounded portrait keyboard-hide recovery
+
+Base: 01896574439233512bc9b141f03cd7a2392f23e0 (including dark-mode watchdog fix).
+
+The reported QQ permanently-expanded state is not device-reproduced here. There are no QQ logs; extra scenes/windows preventing the strict client-size acknowledgment are a hypothesis, not an established QQ root cause. The client enumeration remains strict and unchanged.
+
+Normal DidHide still submits the original scene frame and keeps the expanded host until the applied scene matches. An exact PID-scoped client-size acknowledgment permits immediate handoff. Without that acknowledgment, 30 scheduled 60Hz poll ticks (~0.5s, potentially longer under main-queue load) allow size-confirmation degradation ONLY while the original scene frame matches. Attempt zero never bypasses size confirmation. P12_SIZE_ACK_DEGRADED explicitly records that this is NOT a rendered-pixel fence. An unmatched scene still times out at 120 ticks and rolls back safely with the recovery snapshot retained.
+
+A DidHide restore rejected by transient layout/restoration gates now gets up to four ordinary submissions separated by asynchronous 100ms retries. A normal restore failure also enters the same bounded retry chain. The final fallback uses the existing zero-duration canvas restore, only outside busy gates. It does not manufacture success: host/configuration/submission failure retains the original snapshot, saved frame and expanded state with P5_RESTORE_RETRY / P12_RETRY_EXHAUSTED diagnostics. No indefinite or busy loop is added.
+
+Retry guards capture the owner session, layout generation, manager membership/current floating owner, live lifecycle flags and the client's PID/bundle/hidden phase/focus. Shown, close, rotation, owner replacement and layout-epoch changes invalidate queued retries. Same-frame expansion invalidates retry generation before its no-op check. Synchronous force restoration invalidates it before cleanup. Duplicate failure callbacks are settled once.
+
+The existing prepareVisual-before-host ordering, root/child compensation cleanup within the no-animation handoff, ownsFrame condition, keyboard authorization/focus/policy, scene ABI checks and dark watchdog fix are preserved. No remote snapshots, private transition contexts, dispatch_sync, synthetic keyboard notifications or new focus acquisition are introduced.
+
+Production .inc tests cover absent acknowledgment with applied scene (zero/29 wait, 30 succeeds), unmatched-scene timeout rollback, transient gate recovery, stale Shown/close/rotate/ownership/layout-epoch retries, and retry exhaustion with a real mocked host rejection retaining the exact snapshot. Mutation tests require assertion failure, not compilation failure or crashes. Existing geometry comparison still reports its three historical baseline failures honestly. UIKit, scene delivery and host transport are mocked; only macOS CI compiles/runs Objective-C and builds the arm64e RootHide package. Device QQ rendering remains unverified.

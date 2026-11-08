@@ -51,8 +51,26 @@
                 [owner.session.bundleIdentifier isEqual:event[@"bundle"]] &&
                 !owner.closing && !owner.dismissing && !owner.activeManipulation &&
                 !owner.docked && !owner.thumbnail && !owner.dipped && !owner.rebounding &&
-                !owner.fullscreenExpanding && !owner.session.landscape && !owner.session.layoutInFlight)
+                !owner.fullscreenExpanding && !owner.session.landscape) {
+                __weak typeof(self) weakManager=self;
+                __weak ZNSFloatingView *weakOwner=owner;
+                __weak ZNSSceneSession *weakSession=owner.session;
+                __weak ZNSKeyboardPlacement *weakPlacement=owner.session.keyboardPlacement;
+                BOOL (^sessionGuard)(void)=[owner.session znsPortraitRestoreSessionGuard];
+                BOOL (^hiddenGuard)(void)=[owner.session.keyboardPlacement znsPortraitHiddenRestoreGuard];
+                owner.portraitKeyboardHideRetryGuard=^BOOL{
+                    typeof(self) manager=weakManager;
+                    ZNSFloatingView *live=weakOwner;
+                    return manager && live && manager.enabled && !manager.window.hidden &&
+                        manager.floating==live && [manager.windows containsObject:live] &&
+                        live.session==weakSession && live.session.keyboardPlacement==weakPlacement && sessionGuard() &&
+                        live.ready && !live.hidden && !live.closing && !live.dismissing &&
+                        !live.activeManipulation && !live.docked && !live.thumbnail && !live.dipped &&
+                        !live.rebounding && !live.fullscreenExpanding && !live.session.landscape &&
+                        hiddenGuard();
+                };
                 [view znsRestorePortraitKeyboardAfterHide];
+            }
             else [view restorePortraitKeyboardWithDuration:duration options:options];
             // Transport/eligibility loss is not an explicit drag or API failure.
             // Preserve an existing user suppression, but do not create one.

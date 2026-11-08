@@ -135,6 +135,8 @@ static BOOL ZNSConfigureHostCanvas(ZNSTempHost *host,CGSize size,NSInteger orien
 @property(nonatomic) CGRect znsPortraitRestoreExpandedFrame;
 @property(nonatomic,copy) void (^znsPortraitRestoreCompletion)(BOOL);
 - (BOOL)znsRestorePortraitAfterHide:(void (^)(BOOL))completion;
+- (BOOL (^)(void))znsPortraitRestoreSessionGuard;
+- (BOOL)znsPortraitRestoreGateBusy;
 - (void)znsCancelPortraitRestore;
 - (void)znsPollPortraitRestore:(NSUInteger)generation attempt:(NSUInteger)attempt;
 - (void)znsFailPortraitRestore:(NSUInteger)generation;

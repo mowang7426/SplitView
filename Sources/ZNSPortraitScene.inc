@@ -1,6 +1,18 @@
 // Included inside ZNSSceneSession's implementation; also executed by the
 // macOS mock tests. This path owns ONLY frame/reference size, never focus,
 // foreground activation, orientation, keyboard inset or persistent defaults.
+- (BOOL (^)(void))znsPortraitRestoreSessionGuard {
+    NSUInteger layout=self.layoutGeneration;
+    __weak typeof(self) weakSelf=self;
+    return [^BOOL{
+        typeof(self) owner=weakSelf;
+        return owner && owner.layoutGeneration==layout && !owner.stopped &&
+            !owner.deviceLockRequested && !owner.switcherRemovalRequested && !owner.landscape;
+    } copy];
+}
+- (BOOL)znsPortraitRestoreGateBusy {
+    return self.layoutInFlight || self.temporaryPortraitRestoring;
+}
 - (BOOL)znsOwnsTemporaryPortraitGeneration:(NSUInteger)generation {
     return self.temporaryPortraitGeneration==generation && self.temporaryPortraitSettings &&
         !self.stopped && !self.deviceLockRequested && !self.switcherRemovalRequested && !self.layoutInFlight;

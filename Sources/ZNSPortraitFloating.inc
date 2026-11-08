@@ -68,6 +68,9 @@
         animations:^{ self.transform=visual; [self znsSetPortraitCompensation:YES]; } completion:finish];
 }
 - (void)znsResumePortraitAfterHide {
+    ++self.portraitKeyboardHideRetryGeneration;
+    self.portraitKeyboardHideRetryActive=NO;
+    self.portraitKeyboardHideRetryGuard=nil;
     if (!self.session.znsPortraitRestorePending) return;
     [self.session znsCancelPortraitRestore];
     CGRect frame=[self.superview convertRect:self.portraitKeyboardTarget toView:self.window];
@@ -80,8 +83,43 @@
         self.portraitKeyboardVisualFinalizePending=YES;
         return;
     }
+    if (self.portraitKeyboardHideRetryActive) return;
+    self.portraitKeyboardHideRetryActive=YES;
+    NSUInteger token=++self.portraitKeyboardHideRetryGeneration;
+    [self znsAttemptPortraitHideRestore:0 token:token];
+}
+- (void)znsRetryPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token {
+    if (!self.portraitKeyboardHideRetryActive || self.portraitKeyboardHideRetryGeneration!=token) return;
+    if (!self.portraitKeyboardHideRetryGuard || !self.portraitKeyboardHideRetryGuard()) {
+        self.portraitKeyboardHideRetryActive=NO;
+        return;
+    }
+    __weak typeof(self) weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/10),dispatch_get_main_queue(),^{
+        typeof(self) owner=weakSelf;
+        if (!owner || !owner.portraitKeyboardHideRetryActive ||
+            owner.portraitKeyboardHideRetryGeneration!=token ||
+            !owner.portraitKeyboardHideRetryGuard || !owner.portraitKeyboardHideRetryGuard()) return;
+        [owner znsAttemptPortraitHideRestore:attempt+1 token:token];
+    });
+}
+- (void)znsAttemptPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token {
+    if (!self.portraitKeyboardHideRetryActive || self.portraitKeyboardHideRetryGeneration!=token) return;
+    if (attempt>=4) {
+        // Last resort is the existing synchronous zero-duration recovery. It
+        // retains the saved snapshot on real host/submission failure; no fake OK.
+        self.portraitKeyboardHideRetryActive=NO;
+        if ([self.session znsPortraitRestoreGateBusy]) {
+            os_log_error(ZNSLog(),"P12_RETRY_EXHAUSTED gate busy; retained recovery snapshot");
+            return;
+        }
+        os_log_error(ZNSLog(),"P12_RETRY_EXHAUSTED attempting existing zero-duration recovery");
+        [self restorePortraitKeyboardWithDuration:0 options:0];
+        return;
+    }
     NSUInteger generation=self.portraitKeyboardRestoreGeneration;
     __weak typeof(self) weakSelf=self;
+    __block BOOL settled=NO;
     // Child counter-maps are removed inside the same no-animation host handoff,
     // immediately before ZNSConfigureHostCanvas observes the restored canvas.
     // The completion clears the root transform before normal UIKit layout.
@@ -93,18 +131,22 @@
     };
     BOOL accepted=[self.session znsRestorePortraitAfterHide:^(BOOL success) {
         typeof(self) owner=weakSelf;
-        if (!owner || owner.portraitKeyboardRestoreGeneration!=generation) return;
+        settled=YES;
+        if (!owner || owner.portraitKeyboardRestoreGeneration!=generation ||
+            owner.portraitKeyboardHideRetryGeneration!=token) return;
         if (success) {
             BOOL suppressed=owner.portraitKeyboardSuppressed;
             [owner restorePortraitKeyboardWithDuration:0 options:0];
             owner.portraitKeyboardSuppressed=suppressed;
         } else {
             [owner clearPortraitKeyboardVisualRestore];
+            [owner znsRetryPortraitHideRestore:attempt token:token];
         }
     }];
-    if (!accepted) {
+    if (!accepted && !settled) {
         self.session.znsPortraitRestorePrepareVisual=nil;
         [self clearPortraitKeyboardVisualRestore];
+        [self znsRetryPortraitHideRestore:attempt token:token];
     }
 }
 - (void)cancelPortraitKeyboardVisualRestoreWithDuration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options {
@@ -160,6 +202,9 @@
 }
 - (void)restorePortraitKeyboardWithDuration:(NSTimeInterval)duration options:(UIViewAnimationOptions)options {
     if (self.session.znsPortraitHandoffInFlight) return;
+    ++self.portraitKeyboardHideRetryGeneration;
+    self.portraitKeyboardHideRetryActive=NO;
+    self.portraitKeyboardHideRetryGuard=nil;
     [self znsClearPortraitChrome];
     [self.session znsCancelPortraitRestore];
     if (!self.portraitKeyboardExpanded || self.portraitKeyboardRestoring) return;

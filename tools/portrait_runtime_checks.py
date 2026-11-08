@@ -52,7 +52,7 @@ int main(void) { @autoreleasepool {
     # Execute the actual integration test with deliberate historical faults.
     # Each variant MUST fail an assertion (not compilation, crash, or timeout).
     (tmp/'tools').mkdir();(tmp/'Sources').mkdir()
-    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc']:
+    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc','PortraitHideRetryTests.inc']:
         shutil.copy2(p/'tools'/name,tmp/'tools'/name)
     for name in ['ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
         shutil.copy2(p/'Sources'/name,tmp/'Sources'/name)
@@ -68,7 +68,7 @@ int main(void) { @autoreleasepool {
             ('window-enumeration-reentry','ZNSPortraitManager.inc','for (ZNSFloatingView *view in [self.windows copy])','for (ZNSFloatingView *view in self.windows)'),
             ('animation-restart','ZNSPortraitFloating.inc','if (self.portraitKeyboardExpanded && CGRectEqualToRect(frame,self.portraitKeyboardTarget)) return;','/* faulty repeated animation */')]
     faults += [
-        ('restore-early-clear','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && [self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest]) {','if (sceneMatches) {'),
+        ('restore-early-clear','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && (sizeAcknowledged || sizeGraceExpired)) {','if (sceneMatches && (sizeAcknowledged || sizeGraceExpired || YES)) {'),
         ('restore-intermediate-host-layout','ZNSPortraitRestoreTransaction.inc','        self.znsPortraitRestoreCompletion=completion;','        self.znsPortraitRestoreCompletion=completion;\n        ZNSConfigureHostCanvas(self.hostView,[desired frame].size,UIInterfaceOrientationPortrait);'),
         ('visual-missing-willhide','ZNSPortraitPlacement.inc','    ZNSPublishPortraitVisualWillHideAsync(self,generation,pid,bundle,duration,options,YES);','    if (NO) ZNSPublishPortraitVisualWillHideAsync(self,generation,pid,bundle,duration,options,YES);'),
         ('visual-synchronous-delivery','ZNSPortraitVisualEvent.inc','dispatch_async(dispatch_get_main_queue(),^{','ZNSVisualSynchronousTest(^{'),
@@ -83,10 +83,19 @@ int main(void) { @autoreleasepool {
         ('visual-prehost-compensation-clear','ZNSPortraitFloating.inc','owner.portraitKeyboardRestoreGeneration==generation)\n            [owner znsClearPortraitCompensation];','owner.portraitKeyboardRestoreGeneration==generation)\n            (void)owner;'),
         ('visual-chrome-pop','ZNSPortraitCompensation.inc','[self znsSetPortraitChromeAlpha:enabled?0:1];','[self znsSetPortraitChromeAlpha:1];'),
     ]
+    faults += [
+        ('restore-grace-skipped','ZNSPortraitRestoreTransaction.inc','BOOL sizeGraceExpired=attempt>=30;','BOOL sizeGraceExpired=YES;'),
+        ('restore-grace-disabled','ZNSPortraitRestoreTransaction.inc','BOOL sizeGraceExpired=attempt>=30;','BOOL sizeGraceExpired=NO;'),
+        ('restore-scene-bypassed','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && (sizeAcknowledged || sizeGraceExpired)) {','if ((sceneMatches && sizeAcknowledged) || sizeGraceExpired) {'),
+        ('hide-retry-missing','ZNSPortraitFloating.inc','[owner znsAttemptPortraitHideRestore:attempt+1 token:token];','(void)attempt;'),
+        ('hide-retry-stale-owner','ZNSPortraitFloating.inc','!owner.portraitKeyboardHideRetryGuard || !owner.portraitKeyboardHideRetryGuard()) return;','!owner.portraitKeyboardHideRetryGuard) return;'),
+        ('hide-retry-exhaustion-fake-success','ZNSPortraitFloating.inc','[self restorePortraitKeyboardWithDuration:0 options:0];\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;','self.portraitKeyboardExpanded=NO;\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;'),
+    ]
     for name,file,old,new in faults:
         f=tmp/'Sources'/file;original=f.read_text();assert original.count(old)==1
         f.write_text(original.replace(old,new))
-        r=run(tmp/'tools/PortraitEventTests.m',tmp/name)
+        testfile='PortraitSceneTests.m' if name in ('restore-grace-skipped','restore-grace-disabled','restore-scene-bypassed','restore-early-clear') else 'PortraitEventTests.m'
+        r=run(tmp/'tools'/testfile,tmp/name)
         (p/'build'/('mutation-'+name+'.log')).write_text(r.stdout+r.stderr)
         assert r.returncode!=0 and 'Assertion' in r.stderr,(name,r.returncode,r.stderr)
         print('PASS regression detector rejects',name,'with assertion failure')

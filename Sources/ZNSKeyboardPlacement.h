@@ -31,6 +31,7 @@ FOUNDATION_EXPORT NSNotificationName const ZNSPortraitKeyboardWillHideVisualNoti
 - (void)updateTemporaryPortraitCanvas:(CGSize)canvas;
 - (uint64_t)znsRequestRestoreSize:(CGSize)size;
 - (BOOL)znsRestoreSizeMatches:(uint64_t)request;
+- (BOOL (^)(void))znsPortraitHiddenRestoreGuard;
 - (void)requestPortraitClientGeometry;
 - (void)suspend;
 - (void)invalidate;

@@ -55,6 +55,9 @@
 @property(nonatomic,copy) void (^znsPortraitRestorePrepareVisual)(void);
 @property(nonatomic,readonly) BOOL znsPortraitHandoffInFlight;
 @property(nonatomic,readonly) BOOL znsPortraitRestorePending;
+// Main-thread, read-only guards for bounded UI recovery; never acquire focus.
+- (BOOL (^)(void))znsPortraitRestoreSessionGuard;
+- (BOOL)znsPortraitRestoreGateBusy;
 - (BOOL)znsRestorePortraitAfterHide:(void (^)(BOOL success))completion;
 - (void)znsCancelPortraitRestore;
 - (BOOL)restoreTemporaryPortraitCanvas;

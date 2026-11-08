@@ -2,6 +2,20 @@
 // A reparent/canvas refresh is NOT a keyboard hide. Keep only an already
 // ownership-proven presentation. Bounded grace is for an unconfirmed remount;
 // an App-confirmed shown latch is NOT expired by that deadline.
+- (BOOL (^)(void))znsPortraitHiddenRestoreGuard {
+    NSUInteger phase=self.portraitKeyboardVisualPhaseGeneration;
+    pid_t pid=self.clientPID;
+    NSString *bundle=[self.bundleIdentifier copy];
+    __weak typeof(self) weakSelf=self;
+    return [^BOOL{
+        typeof(self) owner=weakSelf;
+        return owner && owner.clientPID==pid && pid>0 &&
+            [owner.bundleIdentifier isEqual:bundle] && owner.portraitKeyboardVisualPhaseGeneration==phase &&
+            owner.portraitExpansion && owner.active && !owner.suspended && !owner.invalidated &&
+            owner.clientVisibilityKnown && owner.keyboardHidden && !owner.clientKeyboardShown &&
+            !owner.clientKeyboardWillHide && ZNSKeyboardMatchesFocus(owner);
+    } copy];
+}
 - (BOOL)znsPortraitKeyboardContinuity {
     // PID-validated App phase + same focused scene survive temporary UIKit
     // host/surface/geometry loss; only DidHide or lifecycle/focus loss ends it.

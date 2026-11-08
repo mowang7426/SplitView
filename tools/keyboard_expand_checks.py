@@ -3,8 +3,8 @@ p=pathlib.Path(__file__).resolve().parents[1]
 for f in (p/'Preferences').rglob('*.plist'):
     plistlib.loads(f.read_bytes())
 manifest=json.loads((p/'apelin-project.json').read_text())
-assert manifest['package']['version']=='0.7.66+keyboard11'
-assert 'Version: 0.7.66+keyboard11' in (p/'control').read_text()
+assert manifest['package']['version']=='0.7.66+keyboard12'
+assert 'Version: 0.7.66+keyboard12' in (p/'control').read_text()
 for name in ['Sources/ZNSAuthorization.h','Sources/ZNSKeyboardFocus.m','Preferences/ZNSRootListController.m','Sources/ZNSKeyboardPolicy.h']:
     original=subprocess.check_output(['git','show','e174b5232a0f7e18ed79c25e3e83481de507b0e7:'+name],cwd=p)
     assert (p/name).read_bytes()==original,name+' unexpectedly changed'
@@ -139,3 +139,13 @@ assert 'self.transform=CGAffineTransformIdentity;' in cleanup and '[self znsClea
 assert cleanup.index('self.transform=CGAffineTransformIdentity;')<cleanup.index('[self znsClearPortraitCompensation];')
 assert '[self znsClearPortraitCompensation]' in manager
 print('PASS keyboard11 child compensation clears in prepare callback before host configuration; root clears on successful completion within no-animation handoff; geometry/events separately tested, not device pixels.')
+
+assert 'BOOL sizeGraceExpired=attempt>=30;' in handoff
+assert 'if (sceneMatches && (sizeAcknowledged || sizeGraceExpired))' in handoff
+assert 'P12_SIZE_ACK_DEGRADED' in handoff
+assert 'attempt>=4' in floating and 'NSEC_PER_SEC/10' in floating
+assert 'owner.portraitKeyboardHideRetryGeneration!=token' in floating
+assert 'manager.floating==live && [manager.windows containsObject:live]' in manager
+assert 'sessionGuard()' in manager and 'owner.layoutGeneration==layout' in transaction
+assert 'owner.clientPID==pid' in source and 'owner.portraitKeyboardVisualPhaseGeneration==phase' in source
+print('PASS keyboard12 bounded size-confirmation degradation requires matched scene; bounded asynchronous hide retry with phase/PID/focus, generation, ownership, lifecycle and layout epoch guards; failure retains snapshot.')

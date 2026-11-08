@@ -168,6 +168,12 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 @property(nonatomic) BOOL portraitKeyboardSuppressed;
 @property(nonatomic) BOOL portraitKeyboardRestoring;
 @property(nonatomic) NSUInteger portraitKeyboardRestoreGeneration;
+@property(nonatomic) NSUInteger portraitKeyboardHideRetryGeneration;
+@property(nonatomic) BOOL portraitKeyboardHideRetryActive;
+@property(nonatomic,copy) BOOL (^portraitKeyboardHideRetryGuard)(void);
+- (void)znsAttemptPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token;
+- (void)znsRetryPortraitHideRestore:(NSUInteger)attempt token:(NSUInteger)token;
+
 @property(nonatomic) BOOL portraitKeyboardVisualRestoring;
 @property(nonatomic) BOOL portraitKeyboardVisualRestoreCompleted;
 @property(nonatomic) BOOL portraitKeyboardVisualFinalizePending;

@@ -26,6 +26,18 @@ static void RestoreTransactionTests(void) {
     assert(completions==0); // stale request id
     ClientLayout(s); assert(completions==1); Original(s);
     ClientLayout(s); assert(completions==1);
+    // No client reply: attempt zero MUST wait, then size-only degradation.
+    s=New(); assert([s applyTemporaryPortraitFrame:expanded failure:nil]); Ack(s);
+    __block NSUInteger degraded=0;
+    assert([s znsRestorePortraitAfterHide:^(BOOL ok){assert(ok); degraded++;}]);
+    NSUInteger graceGeneration=s.temporaryPortraitGeneration;
+    [s znsPollPortraitRestore:graceGeneration attempt:0];
+    assert(!degraded && s.znsPortraitRestorePending);
+    [s znsPollPortraitRestore:graceGeneration attempt:29];
+    assert(!degraded && s.temporaryPortraitSettings);
+    [s znsPollPortraitRestore:graceGeneration attempt:30];
+    assert(degraded==1 && !s.znsPortraitRestorePending); Original(s);
+    Drain(ZNSDeadlines); Ack(s); assert(degraded==1);
     // Rapid show must explicitly re-submit expanded scene, not same-frame skip.
     s=New(); assert([s applyTemporaryPortraitFrame:expanded failure:nil]); Ack(s);
     assert([s znsRestorePortraitAfterHide:^(BOOL ok){(void)ok; assert(0);}]);
@@ -41,10 +53,12 @@ static void RestoreTransactionTests(void) {
     // Timeout safely returns to expanded, snapshot retained; retry succeeds.
     s=New(); assert([s applyTemporaryPortraitFrame:expanded failure:nil]); Ack(s);
     __block NSUInteger failures=0;
+    s.scene.deferApply=YES;
     assert([s znsRestorePortraitAfterHide:^(BOOL ok){assert(!ok); failures++;}]);
     [s znsPollPortraitRestore:s.temporaryPortraitGeneration attempt:120];
     assert(failures==1 && !s.znsPortraitRestorePending && s.temporaryPortraitSettings);
     assert(CGRectEqualToRect(s.scene.settings.frame,expanded)); Ack(s);
+    s.scene.deferApply=NO;
     assert([s znsRestorePortraitAfterHide:^(BOOL ok){assert(ok);}]); ClientLayout(s); Original(s);
     // Submission exception also preserves retry state and releases ownership.
     s=New(); assert([s applyTemporaryPortraitFrame:expanded failure:nil]); Ack(s);

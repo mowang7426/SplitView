@@ -1,5 +1,5 @@
 // Normal DidHide only. Lifecycle restoration remains synchronous and cancels
-// this generation. No host/reference mutation until BOTH real conditions hold.
+// this generation. Scene application is mandatory; client size ack has bounded grace.
 - (void)znsCancelPortraitRestore {
     if (!self.znsPortraitRestorePending) return;
     self.znsPortraitRestorePending=NO;
@@ -22,7 +22,13 @@
         id applied=ZNSGet(self.scene,@"settings");
         sceneMatches=ZNSSettingsReadAPI(applied) && ZNSGeometryRectNear([applied frame],[self.temporaryPortraitSettings frame]);
     } @catch (__unused NSException *exception) {}
-    if (sceneMatches && [self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest]) {
+    BOOL sizeAcknowledged=[self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest];
+    // Strict client enumeration can remain ambiguous (e.g. extra app windows).
+    // After 30 scheduled ticks (~0.5s), degrade SIZE CONFIRMATION only. Applied
+    // scene matching remains mandatory. Neither path is a client pixel fence.
+    BOOL sizeGraceExpired=attempt>=30;
+    if (sceneMatches && (sizeAcknowledged || sizeGraceExpired)) {
+        if (!sizeAcknowledged) os_log_error(ZNSLog(),"P12_SIZE_ACK_DEGRADED scene=matched grace=expired; not a pixel fence");
         self.znsPortraitHandoffInFlight=YES;
         @try { ZNSRunPortraitHandoff(^{
             if (![self znsOwnsTemporaryPortraitGeneration:generation] || !self.znsPortraitRestorePending) return;
