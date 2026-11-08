@@ -19,7 +19,7 @@ static void HiddenProofTests(void) {
         ZNSMockPhase=103; ZNSMockLive=evidence;
         [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
         assert(p.znsHiddenProofRequest && !p.keyboardHidden);
-        ZNSMockResponse=ZNSMockRequest;
+        ZNSMockReply();
         [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
         Publish(m,p,NO); Drain(ZNSReady); Drain(ZNSAnimationEnds);
         assert(v.portraitKeyboardExpanded && !v.session.znsPortraitRestorePending);
@@ -27,8 +27,11 @@ static void HiddenProofTests(void) {
         assert([p znsPortraitKeyboardContinuity]);
         // No new UIKit shown notification is needed: subsequent live absence
         // for the SAME raw hide phase must still converge on real dismissal.
-        [p znsResampleHiddenProof]; ZNSMockLive=2;
-        [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; ZNSMockResponse=ZNSMockRequest;
+        ZNSMockLive=2;
+        [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
+        assert(!p.keyboardHidden); // old reply must not change with live input
+        [p znsResampleHiddenProof]; assert(!p.znsHiddenProofRequest);
+        [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; ZNSMockReply();
         [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
         assert(v.session.znsPortraitRestorePending);
         // keyboard12 missing size ack remains usable, but only after real hide

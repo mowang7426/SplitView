@@ -22,7 +22,8 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
 };
 #include "../Sources/ZNSClientHiddenProof.inc"
 static uint64_t ZNSMockPhase=101,ZNSMockRequest,ZNSMockResponse,ZNSMockExpected;
-static NSInteger ZNSMockLive=2;
+static NSInteger ZNSMockLive=2,ZNSMockReplyLive=2;
+static void ZNSMockReply(void) { ZNSMockReplyLive=ZNSMockLive; ZNSMockResponse=ZNSMockRequest; }
 static uint64_t ZNSReadClientKeyboardPhaseWord(pid_t pid) { return pid==42?ZNSMockPhase:0; }
 static ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) { return (ZNSClientKeyboardPhase)(ZNSReadClientKeyboardPhaseWord(pid)&3); }
 static uint64_t ZNSRequestClientHiddenProof(pid_t pid,uint64_t phase) {
@@ -30,7 +31,7 @@ static uint64_t ZNSRequestClientHiddenProof(pid_t pid,uint64_t phase) {
 }
 static NSInteger ZNSReadClientHiddenProof(pid_t pid,uint64_t request,uint64_t phase) {
     if (pid!=42 || !request || request!=ZNSMockResponse || phase!=ZNSMockExpected) return 0;
-    return ZNSClientResolveHiddenProof(phase,ZNSMockPhase,ZNSMockLive);
+    return ZNSClientResolveHiddenProof(phase,ZNSMockPhase,ZNSMockReplyLive);
 }
 static NSDictionary *ZNSPortraitRestoreTiming;
 static NSUInteger ZNSVisibilityPublications;
@@ -192,7 +193,7 @@ static void ConfirmHidden(ZNSKeyboardPlacement *p) {
     ZNSMockPhase=((ZNSMockPhase>>2)+1)*4+ZNSClientKeyboardHidden;
     ZNSMockLive=2;
     [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
-    ZNSMockResponse=ZNSMockRequest;
+    ZNSMockReply();
     [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
 }
 static BOOL ZNSKeyboardHookReady=YES;
