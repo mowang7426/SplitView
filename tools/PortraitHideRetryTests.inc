@@ -19,7 +19,7 @@ static void HideRetryTests(void) {
     Drain(ZNSDeadlines); Drain(ZNSReady);
     // Even before asynchronous manager Shown/close processing, the old retry
     // must not mutate the new phase, another owner, or a rotation epoch.
-    for (NSUInteger mode=0;mode<7;mode++) {
+    for (NSUInteger mode=0;mode<8;mode++) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
         [p znsAcceptClientPhase:ZNSClientKeyboardShown];
         ConfirmHidden(p); v.session.layoutInFlight=YES; Publish(m,p,YES);
@@ -34,9 +34,11 @@ static void HideRetryTests(void) {
         if(mode==4) ++v.session.layoutGeneration;
         if(mode==5) p.clientPID=43;
         if(mode==6) ++v.portraitKeyboardHideRetryGeneration;
+        if(mode==7) ZNSFocus=NO;
         HideRetryStep();
         assert(!v.session.znsPortraitRestorePending && v.session.scene.updates==updates);
         assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.portraitKeyboardTarget,target));
+        ZNSFocus=YES;
         Drain(ZNSReady); Drain(ZNSAnimationEnds); Drain(ZNSDeadlines);
     }
     // An accepted retry is still guarded until the actual host handoff.
