@@ -52,9 +52,9 @@ int main(void) { @autoreleasepool {
     # Execute the actual integration test with deliberate historical faults.
     # Each variant MUST fail an assertion (not compilation, crash, or timeout).
     (tmp/'tools').mkdir();(tmp/'Sources').mkdir()
-    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc','PortraitHideRetryTests.inc','PortraitHiddenProofTests.inc']:
+    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc','PortraitHideRetryTests.inc','PortraitHiddenProofTests.inc','PortraitHiddenSurfaceTests.inc','ClientVisibilityTests.m']:
         shutil.copy2(p/'tools'/name,tmp/'tools'/name)
-    for name in ['ZNSClientHiddenProof.inc','ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
+    for name in ['ZNSHiddenSurfaceRecovery.inc','ZNSClientLiveVisibility.inc','ZNSClientHiddenProof.inc','ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
         shutil.copy2(p/'Sources'/name,tmp/'Sources'/name)
     faults=[('shown-race','ZNSPortraitPlacement.inc','BOOL continuous=self.portraitCanvasTransitionUntil>CACurrentMediaTime();','BOOL continuous=self.clientKeyboardShown && self.portraitCanvasTransitionUntil>CACurrentMediaTime();'),
             ('shown-expiry','ZNSPortraitPlacement.inc','return visible || self.portraitKeyboardVisibleLatch || continuous;','return visible || continuous;'),
