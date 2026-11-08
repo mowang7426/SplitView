@@ -86,28 +86,7 @@ NSInteger ZNSReadClientHiddenProof(pid_t pid,uint64_t request,uint64_t phase) {
     return before==request && ZNSHiddenRead(pid,@"hidden.response")==before && expected==phase &&
         ZNSReadClientKeyboardPhaseWord(pid)==phase && value<=2?(NSInteger)value:0;
 }
-// No responder/focus mutation. Unsupported ABI is UNKNOWN, never absence.
-static NSInteger ZNSClientLiveKeyboardVisibility(void) {
-    Class cls=NSClassFromString(@"UIKeyboardImpl");
-    SEL active=NSSelectorFromString(@"activeInstance");
-    Method method=class_getClassMethod(cls,active); char type[128]={0};
-    if (method) method_getReturnType(method,type,sizeof(type));
-    if (!method || method_getNumberOfArguments(method)!=2 || type[0]!='@') return 0;
-    id keyboard=((id(*)(id,SEL))objc_msgSend)(cls,active);
-    if (!keyboard) return 0;
-    NSInteger evidence=0;
-    for (NSString *name in @[@"isVisible",@"isOnScreen"]) {
-        SEL selector=NSSelectorFromString(name);
-        method=class_getInstanceMethod(object_getClass(keyboard),selector);
-        memset(type,0,sizeof(type));
-        if (method) method_getReturnType(method,type,sizeof(type));
-        if (!method || method_getNumberOfArguments(method)!=2 || strcmp(type,@encode(BOOL))) continue;
-        NSInteger sample=((BOOL(*)(id,SEL))objc_msgSend)(keyboard,selector)?1:2;
-        if (evidence && evidence!=sample) return 0;
-        evidence=sample;
-    }
-    return evidence;
-}
+#include "ZNSClientLiveVisibility.inc"
 static int ZNSAnimationToken;
 static BOOL ZNSAnimationReady;
 BOOL ZNSReadClientKeyboardAnimation(pid_t pid,NSTimeInterval *duration,UIViewAnimationOptions *options) {

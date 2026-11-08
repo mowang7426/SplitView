@@ -45,6 +45,8 @@ jobs:
           /tmp/PortraitSceneTests | tee build/PortraitSceneTests.log
           xcrun clang -Wall -Wextra -Werror -fobjc-arc tools/PortraitEventTests.m -framework Foundation -framework CoreGraphics -o /tmp/PortraitEventTests
           /tmp/PortraitEventTests | tee build/PortraitEventTests.log
+          xcrun clang -Wall -Wextra -Werror -fobjc-arc tools/ClientVisibilityTests.m -framework Foundation -o /tmp/ClientVisibilityTests
+          /tmp/ClientVisibilityTests | tee build/ClientVisibilityTests.log
           python3 tools/portrait_runtime_checks.py | tee build/portrait-runtime-checks.log
           python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log

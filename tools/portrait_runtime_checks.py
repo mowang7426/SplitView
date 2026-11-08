@@ -100,10 +100,22 @@ int main(void) { @autoreleasepool {
         ('hidden-proof-unknown-collapses','ZNSClientHiddenProof.inc','return liveVisibility==1?1:liveVisibility==2?2:0;','return liveVisibility==1?1:liveVisibility==2?2:2;'),
         ('hidden-proof-handoff-stale','ZNSPortraitPlacement.inc','ZNSReadClientHiddenProof(pid,owner.znsHiddenProofRequest,owner.znsHiddenProofPhase)==2','YES'),
     ]
+    faults += [
+        ('hidden-resample-disabled','ZNSPortraitPlacement.inc','self.znsHiddenProofRequest=0; // retry','(void)self; // retry'),
+        ('hidden-native-rebound','ZNSHiddenSurfaceRecovery.inc','if (self.portraitExpansion &&','if (NO && self.portraitExpansion &&'),
+        ('hidden-geometry-rebound','ZNSPortraitPlacement.inc','if (self.portraitExpansion && self.keyboardHidden &&','if (NO && self.portraitExpansion && self.keyboardHidden &&'),
+        ('hidden-native-permanently-disabled','ZNSHiddenSurfaceRecovery.inc','ZNSReadClientKeyboardPhase(self.clientPID)!=ZNSClientKeyboardShown','YES'),
+        ('reader-bool-B-unsupported','ZNSClientLiveVisibility.inc','!strcmp(type,"B")','!strcmp(type,"Z")'),
+        ('reader-bool-c-unsupported','ZNSClientLiveVisibility.inc','!strcmp(type,"c")','!strcmp(type,"Z")'),
+        ('reader-no-instance-absent','ZNSClientLiveVisibility.inc','if (!keyboard) return 0;','if (!keyboard) return 2;'),
+        ('reader-visible-not-veto','ZNSClientLiveVisibility.inc','if (sample==1) return 1;','if (NO) return 1;'),
+        ('reader-integer-abi-accepted','ZNSClientLiveVisibility.inc','else continue;','else sample=((int(*)(id,SEL))objc_msgSend)(keyboard,selector)?1:2;'),
+    ]
     for name,file,old,new in faults:
         f=tmp/'Sources'/file;original=f.read_text();assert original.count(old)==1
         f.write_text(original.replace(old,new))
         testfile='PortraitSceneTests.m' if name in ('restore-grace-skipped','restore-grace-disabled','restore-scene-bypassed','restore-early-clear') else 'PortraitEventTests.m'
+        if name.startswith('reader-'): testfile='ClientVisibilityTests.m'
         r=run(tmp/'tools'/testfile,tmp/name)
         (p/'build'/('mutation-'+name+'.log')).write_text(r.stdout+r.stderr)
         assert r.returncode!=0 and 'Assertion' in r.stderr,(name,r.returncode,r.stderr)

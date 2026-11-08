@@ -27,7 +27,7 @@ static void HiddenProofTests(void) {
         assert([p znsPortraitKeyboardContinuity]);
         // No new UIKit shown notification is needed: subsequent live absence
         // for the SAME raw hide phase must still converge on real dismissal.
-        p.znsHiddenProofRequest=0; ZNSMockLive=2;
+        [p znsResampleHiddenProof]; ZNSMockLive=2;
         [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; ZNSMockResponse=ZNSMockRequest;
         [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
         assert(v.session.znsPortraitRestorePending);

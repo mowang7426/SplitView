@@ -59,6 +59,11 @@
     }
     self.keyboardHidden=hidden;
 }
+- (void)znsResampleHiddenProof {
+    if (ZNSReadClientHiddenProof(self.clientPID,
+        self.znsHiddenProofRequest,self.znsHiddenProofPhase)!=2)
+        self.znsHiddenProofRequest=0; // retry unknown/visible, never fabricate absence
+}
 - (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase {
     if (phase==ZNSClientKeyboardHidden) {
         // A PID-valid DidHide is still only a notification, not live absence.
@@ -136,6 +141,12 @@
 }
 - (void)znsAcceptClientGeometry:(CGRect)region canvas:(CGSize)canvas valid:(BOOL)valid focused:(BOOL)focused {
     if (self.clientKeyboardWillHide || self.dismissPending) return;
+    // A queued geometry callback may outlive DidHide and the small-scene
+    // handoff. Geometry cannot resurrect a confirmed hidden portrait owner.
+    if (self.portraitExpansion && self.keyboardHidden &&
+        ZNSReadClientKeyboardPhase(self.clientPID)!=ZNSClientKeyboardShown) {
+        [self rejectExternal:@"P3_GEOMETRY_AFTER_HIDE"]; return;
+    }
     if (self.portraitExpansion && (!valid || fabs(canvas.width-self.canvas.width)>1 ||
                                   fabs(canvas.height-self.canvas.height)>1)) {
         // A zero serial, old canvas, or partial scene/window resize is unknown,

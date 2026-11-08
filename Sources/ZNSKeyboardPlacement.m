@@ -125,6 +125,8 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 - (void)restore;
 - (void)reconcile;
 - (void)reconcileSafely;
+- (UIView *)findKeyboard;
+- (void)znsRecoverHiddenNativeSurface;
 - (void)schedule;
 - (void)clearShowProof;
 - (void)stopClientObservation;
@@ -142,6 +144,7 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 - (void)znsBeginPortraitGeometryRefresh;
 - (BOOL)znsDeferPortraitSystemHide;
 - (void)znsClientWillHide;
+- (void)znsResampleHiddenProof;
 - (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase;
 - (void)znsClientDidHide;
 - (void)znsReparentForNativeKeyboardUpdate;
@@ -717,6 +720,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         notify_post(ZNSKeyboardClientEvent(self.clientPID,@"geometry.request").UTF8String);
 }
 #include "ZNSPortraitPlacement.inc"
+#include "ZNSHiddenSurfaceRecovery.inc"
 - (void)configurePortraitExternal:(BOOL)portrait landscapeExternal:(BOOL)landscape move:(BOOL)move {
     self.portraitExternal=portrait; self.landscapeExternal=landscape;
     self.landscapeMove=move;
@@ -757,9 +761,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         self.timer=[NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
             ZNSKeyboardPlacement *owner=weakSelf;
             if (!owner) { [timer invalidate]; return; }
-            if (ZNSReadClientHiddenProof(owner.clientPID,
-                owner.znsHiddenProofRequest,owner.znsHiddenProofPhase)!=2)
-                owner.znsHiddenProofRequest=0; // re-sample unknown/visible, never expire into hidden
+            [owner znsResampleHiddenProof];
             [owner reconcileSafely];
         }];
         [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
@@ -1048,21 +1050,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         if (!retain) [self restore];
         return;
     }
-    if (self.keyboardHidden && !self.explicitlyDismissed && self.external && !self.invalidated &&
-        self.active && !self.suspended && self.host.window && ZNSKeyboardHookReady &&
-        self.clientPID>0 && self.clientPID==ZNSKeyboardClientPID(self) &&
-        CACurrentMediaTime()-self.hiddenAt>0.4 && ZNSKeyboardMatchesFocus(self) &&
-        ZNSKeyboardInputPresent(ZNSKeyboardObject(ZNSActiveKeyboardDelegate(),@"inputViews"))) {
-        // Overlay hide events can set both visibility hints to hidden without
-        // a matching App show event on return. Require a currently visible,
-        // uniquely owned native surface instead of waiting on that stale hint.
-        // No focus request, responder change or old crop is used to recover.
-        UIView *liveKeyboard=[self findKeyboard];
-        if (liveKeyboard && liveKeyboard.window && ZNSKeyboardVisible(liveKeyboard) &&
-            ZNSFiniteRect(liveKeyboard.bounds)) {
-            self.keyboardHidden=NO;
-        }
-    }
+    [self znsRecoverHiddenNativeSurface];
     NSString *gate=self.invalidated?@"session-invalidated":self.suspended?@"session-suspended":
         !self.external?@"current-orientation-set-to-inner":!self.active?@"placement-inactive":
         self.dismissPending?@"dismiss-awaiting-hide":self.keyboardHidden?@"keyboard-marked-hidden":
