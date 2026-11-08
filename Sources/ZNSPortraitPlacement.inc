@@ -50,9 +50,14 @@
     [self znsBeginPortraitGeometryRefresh];
     [self restore];
 }
+- (BOOL)znsMayAcceptNativeShown {
+    return !self.portraitExpansion || !self.keyboardHidden ||
+        ZNSReadClientKeyboardPhase(self.clientPID)==ZNSClientKeyboardShown;
+}
 - (void)znsApplyNativeShowResult:(BOOL)result inputPresent:(BOOL)inputPresent {
     if (self.dismissPending || self.explicitlyDismissed || !ZNSKeyboardMatchesFocus(self)) return;
     BOOL hidden=!result || !inputPresent;
+    if (!hidden && ![self znsMayAcceptNativeShown]) return;
     if (hidden && [self znsDeferPortraitSystemHide]) {
         [self rejectExternal:@"P3_SHOW_HINT_DURING_REPARENT"];
         return;

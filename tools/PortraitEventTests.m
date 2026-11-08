@@ -179,6 +179,7 @@ static id ZNSActiveKeyboardDelegate(void) { return @1; }
 - (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase;
 - (void)znsClientDidHide;
 - (void)znsReparentForNativeKeyboardUpdate;
+- (BOOL)znsMayAcceptNativeShown;
 - (void)znsApplyNativeShowResult:(BOOL)result inputPresent:(BOOL)inputPresent;
 - (void)znsAcceptClientGeometry:(CGRect)region canvas:(CGSize)canvas valid:(BOOL)valid focused:(BOOL)focused;
 @end

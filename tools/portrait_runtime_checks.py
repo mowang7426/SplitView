@@ -102,6 +102,7 @@ int main(void) { @autoreleasepool {
     ]
     faults += [
         ('hidden-resample-disabled','ZNSPortraitPlacement.inc','self.znsHiddenProofRequest=0; // retry','(void)self; // retry'),
+        ('hidden-late-native-show','ZNSPortraitPlacement.inc','if (!hidden && ![self znsMayAcceptNativeShown]) return;','if (NO) return;'),
         ('hidden-native-rebound','ZNSHiddenSurfaceRecovery.inc','if (self.portraitExpansion &&','if (NO && self.portraitExpansion &&'),
         ('hidden-geometry-rebound','ZNSPortraitPlacement.inc','if (self.portraitExpansion && self.keyboardHidden &&','if (NO && self.portraitExpansion && self.keyboardHidden &&'),
         ('hidden-native-permanently-disabled','ZNSHiddenSurfaceRecovery.inc','ZNSReadClientKeyboardPhase(self.clientPID)!=ZNSClientKeyboardShown','YES'),

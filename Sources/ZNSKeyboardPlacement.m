@@ -148,6 +148,7 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 - (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase;
 - (void)znsClientDidHide;
 - (void)znsReparentForNativeKeyboardUpdate;
+- (BOOL)znsMayAcceptNativeShown;
 - (void)znsApplyNativeShowResult:(BOOL)result inputPresent:(BOOL)inputPresent;
 - (void)znsAcceptClientGeometry:(CGRect)region canvas:(CGSize)canvas valid:(BOOL)valid focused:(BOOL)focused;
 @end
@@ -578,6 +579,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                     [owner clearShowProof]; [owner restore]; [owner schedule];
                 }
                 else {
+                    if (![owner znsMayAcceptNativeShown]) { [owner schedule]; return; }
                     // Keep a verified local crop across main-window translation.
                     // A frame notification is a hint, not a reason to move the
                     // attached layer back beneath the floating App's clip chain.

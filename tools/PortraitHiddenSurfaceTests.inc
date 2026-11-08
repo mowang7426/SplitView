@@ -16,6 +16,9 @@ static void HiddenSurfaceRecoveryTests(void) {
     for (NSUInteger tick=0;tick<20;tick++) {
         [p znsRecoverHiddenNativeSurface];
         assert(p.keyboardHidden);
+        assert(![p znsMayAcceptNativeShown]);
+        [p znsApplyNativeShowResult:YES inputPresent:YES];
+        assert(p.keyboardHidden);
         [p znsAcceptClientGeometry:CGRectMake(0,510,390,334) canvas:p.canvas valid:YES focused:YES];
         assert(p.keyboardHidden && !p.clientKeyboardShown);
         Publish(m,p,YES); ZNSNow+=0.25;
@@ -24,6 +27,9 @@ static void HiddenSurfaceRecoveryTests(void) {
     // Unknown and WillHide cannot reopen it either; a real new Shown can.
     for (NSUInteger phase=0;phase<=2;phase++) {
         ZNSMockPhase=200+phase;
+        [p znsApplyNativeShowResult:YES inputPresent:YES];
+        assert(p.keyboardHidden==(phase!=ZNSClientKeyboardShown));
+        p.keyboardHidden=YES;
         [p znsRecoverHiddenNativeSurface];
         assert(p.keyboardHidden==(phase!=ZNSClientKeyboardShown));
         p.keyboardHidden=YES;
