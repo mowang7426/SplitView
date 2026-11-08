@@ -40,19 +40,73 @@ static BOOL ZNSClientDismissNativeKeyboard(UIView *responder) {
 // Written BEFORE geometry/visibility posts; no text or responder data is sent.
 static int ZNSClientPhaseToken;
 static BOOL ZNSClientPhaseReady;
-ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) {
+uint64_t ZNSReadClientKeyboardPhaseWord(pid_t pid) {
     if (pid<=0) return ZNSClientKeyboardUnknown;
     int token; uint64_t word=0;
     if (notify_register_check(ZNSKeyboardClientEvent(pid,@"phase").UTF8String,&token)!=NOTIFY_STATUS_OK) return ZNSClientKeyboardUnknown;
     BOOL ok=notify_get_state(token,&word)==NOTIFY_STATUS_OK;
     notify_cancel(token);
-    return ok?(ZNSClientKeyboardPhase)(word&3):ZNSClientKeyboardUnknown;
+    return ok?word:0;
+}
+ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) {
+    return (ZNSClientKeyboardPhase)(ZNSReadClientKeyboardPhaseWord(pid)&3);
 }
 static void ZNSClientPublishPhase(ZNSClientKeyboardPhase phase) {
     if (ZNSClientPhaseReady) {
         uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
         notify_set_state(ZNSClientPhaseToken,(stamp<<2)|phase);
     }
+}
+#include "ZNSClientHiddenProof.inc"
+static uint64_t ZNSHiddenRead(pid_t pid, NSString *field) {
+    int token; uint64_t word=0;
+    if (notify_register_check(ZNSKeyboardClientEvent(pid,field).UTF8String,&token)!=NOTIFY_STATUS_OK) return 0;
+    notify_get_state(token,&word); notify_cancel(token); return word;
+}
+static void ZNSHiddenWrite(pid_t pid, NSString *field, uint64_t word) {
+    int token;
+    if (notify_register_check(ZNSKeyboardClientEvent(pid,field).UTF8String,&token)!=NOTIFY_STATUS_OK) return;
+    notify_set_state(token,word); notify_cancel(token);
+}
+uint64_t ZNSRequestClientHiddenProof(pid_t pid,uint64_t phase) {
+    if (pid<=0 || !phase || (phase&3)!=ZNSClientKeyboardHidden) return 0;
+    static uint64_t serial;
+    uint64_t request=serial=MAX(serial+1,(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000));
+    ZNSHiddenWrite(pid,@"hidden.response",0);
+    ZNSHiddenWrite(pid,@"hidden.expected",phase);
+    ZNSHiddenWrite(pid,@"hidden.request",request);
+    notify_post(ZNSKeyboardClientEvent(pid,@"hidden.probe").UTF8String);
+    return request;
+}
+NSInteger ZNSReadClientHiddenProof(pid_t pid,uint64_t request,uint64_t phase) {
+    if (!request || !phase || ZNSReadClientKeyboardPhaseWord(pid)!=phase) return 0;
+    uint64_t before=ZNSHiddenRead(pid,@"hidden.response");
+    uint64_t expected=ZNSHiddenRead(pid,@"hidden.phase");
+    uint64_t value=ZNSHiddenRead(pid,@"hidden.visibility");
+    return before==request && ZNSHiddenRead(pid,@"hidden.response")==before && expected==phase &&
+        ZNSReadClientKeyboardPhaseWord(pid)==phase && value<=2?(NSInteger)value:0;
+}
+// No responder/focus mutation. Unsupported ABI is UNKNOWN, never absence.
+static NSInteger ZNSClientLiveKeyboardVisibility(void) {
+    Class cls=NSClassFromString(@"UIKeyboardImpl");
+    SEL active=NSSelectorFromString(@"activeInstance");
+    Method method=class_getClassMethod(cls,active); char type[128]={0};
+    if (method) method_getReturnType(method,type,sizeof(type));
+    if (!method || method_getNumberOfArguments(method)!=2 || type[0]!='@') return 0;
+    id keyboard=((id(*)(id,SEL))objc_msgSend)(cls,active);
+    if (!keyboard) return 0;
+    NSInteger evidence=0;
+    for (NSString *name in @[@"isVisible",@"isOnScreen"]) {
+        SEL selector=NSSelectorFromString(name);
+        method=class_getInstanceMethod(object_getClass(keyboard),selector);
+        memset(type,0,sizeof(type));
+        if (method) method_getReturnType(method,type,sizeof(type));
+        if (!method || method_getNumberOfArguments(method)!=2 || strcmp(type,@encode(BOOL))) continue;
+        NSInteger sample=((BOOL(*)(id,SEL))objc_msgSend)(keyboard,selector)?1:2;
+        if (evidence && evidence!=sample) return 0;
+        evidence=sample;
+    }
+    return evidence;
 }
 static int ZNSAnimationToken;
 static BOOL ZNSAnimationReady;
@@ -269,7 +323,25 @@ void ZNSInstallKeyboardClient(void) {
             ![NSBundle.mainBundle.bundlePath.pathExtension isEqualToString:@"app"]) return;
         ZNSInstallClientRestoreSize();
         static NSMutableArray *observers;
-        static int dismissToken;
+        static int dismissToken,hiddenProbeToken,hiddenStateTokens[5];
+        NSArray *hiddenFields=@[@"hidden.expected",@"hidden.request",@"hidden.response",@"hidden.phase",@"hidden.visibility"];
+        for (NSUInteger i=0;i<hiddenFields.count;i++) {
+            if (notify_register_check(ZNSKeyboardClientEvent(getpid(),hiddenFields[i]).UTF8String,&hiddenStateTokens[i])==NOTIFY_STATUS_OK)
+                notify_set_state(hiddenStateTokens[i],0);
+        }
+        notify_register_dispatch(ZNSKeyboardClientEvent(getpid(),@"hidden.probe").UTF8String,
+            &hiddenProbeToken,dispatch_get_main_queue(),^(int token){
+                (void)token;
+                uint64_t request=ZNSHiddenRead(getpid(),@"hidden.request");
+                uint64_t expected=ZNSHiddenRead(getpid(),@"hidden.expected");
+                NSInteger live=ZNSClientLiveKeyboardVisibility();
+                NSInteger proof=ZNSClientResolveHiddenProof(expected,ZNSReadClientKeyboardPhaseWord(getpid()),live);
+                ZNSHiddenWrite(getpid(),@"hidden.response",0);
+                ZNSHiddenWrite(getpid(),@"hidden.phase",expected);
+                ZNSHiddenWrite(getpid(),@"hidden.visibility",(uint64_t)proof);
+                ZNSHiddenWrite(getpid(),@"hidden.response",request);
+                notify_post(ZNSKeyboardClientEvent(getpid(),@"hide-proof").UTF8String);
+            });
         observers=[NSMutableArray new];
         NSNotificationCenter *center=NSNotificationCenter.defaultCenter;
         ZNSClientPhaseReady=notify_register_check(ZNSKeyboardClientEvent(getpid(),@"phase").UTF8String,&ZNSClientPhaseToken)==NOTIFY_STATUS_OK;

@@ -13,7 +13,8 @@
             [owner.bundleIdentifier isEqual:bundle] && owner.portraitKeyboardVisualPhaseGeneration==phase &&
             owner.portraitExpansion && owner.active && !owner.suspended && !owner.invalidated &&
             owner.clientVisibilityKnown && owner.keyboardHidden && !owner.clientKeyboardShown &&
-            !owner.clientKeyboardWillHide && ZNSKeyboardMatchesFocus(owner);
+            !owner.clientKeyboardWillHide && ZNSKeyboardMatchesFocus(owner) &&
+            ZNSReadClientHiddenProof(pid,owner.znsHiddenProofRequest,owner.znsHiddenProofPhase)==2;
     } copy];
 }
 - (BOOL)znsPortraitKeyboardContinuity {
@@ -60,7 +61,24 @@
 }
 - (void)znsAcceptClientPhase:(ZNSClientKeyboardPhase)phase {
     if (phase==ZNSClientKeyboardHidden) {
-        if (!self.clientVisibilityKnown || !self.keyboardHidden || self.clientKeyboardWillHide) [self znsClientDidHide];
+        // A PID-valid DidHide is still only a notification, not live absence.
+        // QQ scene resize/remount may emit it while the keyboard remains shown.
+        uint64_t current=ZNSReadClientKeyboardPhaseWord(self.clientPID);
+        if ((current&3)!=ZNSClientKeyboardHidden || !ZNSKeyboardMatchesFocus(self)) return;
+        NSInteger proof=ZNSReadClientHiddenProof(self.clientPID,self.znsHiddenProofRequest,current);
+        if (self.znsHiddenProofPhase==current && proof==2) {
+            if (!self.clientVisibilityKnown || !self.keyboardHidden || self.clientKeyboardWillHide) [self znsClientDidHide];
+            return;
+        }
+        // Visible or unknown is continuity, never permission to restore scene.
+        // Keep polling via the existing active placement timer, not a timeout
+        // that converts uncertainty into success. A fresh Shown supersedes it.
+        if (self.clientKeyboardWillHide || self.keyboardHidden) {
+            [self znsAcceptClientPhase:ZNSClientKeyboardShown];
+        }
+        if (self.znsHiddenProofPhase==current && self.znsHiddenProofRequest) return;
+        self.znsHiddenProofPhase=current;
+        self.znsHiddenProofRequest=ZNSRequestClientHiddenProof(self.clientPID,current);
         return;
     }
     if (phase==ZNSClientKeyboardWillHide) { [self znsClientWillHide]; return; }

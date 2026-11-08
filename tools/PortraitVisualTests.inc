@@ -49,7 +49,7 @@ static void VisualTests(void) {
     [v beginPortraitKeyboardVisualRestoreWithDuration:0.31 options:0];
     assert(ZNSAnimations==animations+1); // duplicate delivery cannot restart
     Drain(ZNSAnimationEnds); assert(v.portraitKeyboardVisualRestoreCompleted);
-    [p znsClientDidHide]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     assert(v.session.scene.updates==updates+1 && v.session.temporaryPortraitSettings);
     assert(v.session.znsPortraitRestorePending && v.portraitKeyboardVisualRestoring);
     assert(v.layouts==layouts && CGSizeEqualToSize(v.session.hostView.referenceSize,canvas));
@@ -72,7 +72,7 @@ static void VisualTests(void) {
     m=Manager(&p); v=m.floating; original=v.frame; Publish(m,p,NO); Ack(v.session); Drain(ZNSReady); p.attached=YES; // UIKit remount after expansion (transport mock only).
     [p znsAcceptClientPhase:ZNSClientKeyboardShown]; updates=v.session.scene.updates;
     [p znsClientWillHide]; Drain(ZNSReady); animations=ZNSAnimations;
-    [p znsClientDidHide]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     assert(v.portraitKeyboardVisualFinalizePending && v.portraitKeyboardExpanded);
     assert(v.session.scene.updates==updates && ZNSAnimations==animations);
     Drain(ZNSAnimationEnds);
@@ -105,7 +105,7 @@ static void VisualTests(void) {
     p.presentationDuration=0; p.presentationTimingKnown=YES;
     [p znsClientWillHide]; Drain(ZNSReady);
     assert(ZNSAnimations==animations && v.portraitKeyboardVisualRestoreCompleted);
-    [p znsClientDidHide]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     assert(v.session.znsPortraitRestorePending); ClientLayout(v.session);
     assert(!v.portraitKeyboardVisualRestoring && CGAffineTransformIsIdentity(v.transform));
     assert(v.session.scene.updates==updates+1); Ack(v.session);
@@ -156,7 +156,7 @@ static void VisualSafetyTests(void) {
         Publish(cm,cp,NO); Ack(cv.session); Drain(ZNSReady); cp.attached=YES;
         [cp znsAcceptClientPhase:ZNSClientKeyboardShown];
         [cp znsClientWillHide]; Drain(ZNSReady);
-        if(mode==1) { [cp znsClientDidHide]; Publish(cm,cp,YES); assert(cv.portraitKeyboardVisualFinalizePending); }
+        if(mode==1) { ConfirmHidden(cp); Publish(cm,cp,YES); assert(cv.portraitKeyboardVisualFinalizePending); }
         if(mode==2) { [cp znsAcceptClientPhase:ZNSClientKeyboardShown]; Drain(ZNSReady); assert(cv.portraitKeyboardVisualReturning); }
         if(mode==3) cv.session.hostView.rejectNext=YES;
         NSUInteger oldGeneration=cv.portraitKeyboardVisualRestoreGeneration;
@@ -187,7 +187,7 @@ static void VisualSafetyTests(void) {
     p.dismissPending=YES;
     [p znsClientWillHide]; Drain(ZNSReady); assert(v.portraitKeyboardVisualRestoring);
     Drain(ZNSAnimationEnds); v.session.hostView.rejectNext=YES;
-    [p znsClientDidHide]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     ClientLayout(v.session); // only now does host rejection occur
     assert(v.portraitKeyboardExpanded && v.session.temporaryPortraitSettings);
     assert(!v.portraitKeyboardVisualRestoring && !v.portraitKeyboardRestoring);
@@ -199,7 +199,7 @@ static void VisualSafetyTests(void) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSReady); p.attached=YES; // UIKit remount after expansion (transport mock only).
         [p znsAcceptClientPhase:ZNSClientKeyboardShown]; NSUInteger animations=ZNSAnimations;
         [p znsClientWillHide];
-        if(mode==0) [p znsClientDidHide]; else p.clientPID=43;
+        if(mode==0) ConfirmHidden(p); else p.clientPID=43;
         Drain(ZNSReady); assert(!v.portraitKeyboardVisualRestoring && ZNSAnimations==animations);
     }
     puts("PASS keyboard9 actual async publisher + notification + manager + floating: visual-only WillHide, whole-view mapping, no layout/scene/detach before DidHide, duration/options, duplicate/cancel/early DidHide, generation, owner/PID gates, lifecycle and failed-restore cleanup. UIKit/rendering MOCKED; NOT device verified.");
@@ -211,7 +211,7 @@ static void RestoreOwnershipTests(void) {
     Publish(m,p,NO); Ack(v.session); p.attached=YES;
     [p znsAcceptClientPhase:ZNSClientKeyboardShown];
     [p znsClientWillHide]; Drain(ZNSReady); Drain(ZNSAnimationEnds);
-    [p znsClientDidHide]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     assert(v.session.znsPortraitRestorePending && v.portraitKeyboardVisualRestoring);
     NSUInteger stale=v.session.temporaryPortraitGeneration,updates=v.session.scene.updates;
     CGRect expanded=v.portraitKeyboardTarget;
@@ -228,7 +228,7 @@ static void RestoreOwnershipTests(void) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); p.attached=YES;
         [p znsAcceptClientPhase:ZNSClientKeyboardShown];
         [p znsClientWillHide]; Drain(ZNSReady); Drain(ZNSAnimationEnds);
-        [p znsClientDidHide]; Publish(m,p,YES);
+        ConfirmHidden(p); Publish(m,p,YES);
         assert(v.session.znsPortraitRestorePending);
         stale=v.session.temporaryPortraitGeneration;
         if(mode==0) v.closing=YES;
@@ -274,7 +274,7 @@ static void LayeredHandoffTests(void) {
         AssertVisualRect(VisualScreenRect(v.canvasContainer),normalCanvas);
         assert(CGSizeEqualToSize(v.session.hostView.referenceSize,expanded.size));
         NSUInteger layouts=v.layouts;
-        [p znsClientDidHide]; [v znsRestorePortraitKeyboardAfterHide];
+        ConfirmHidden(p); [v znsRestorePortraitKeyboardAfterHide];
         assert(v.session.znsPortraitRestorePending);
         [v layoutIfNeeded]; assert(v.layouts==layouts); // pending gate retains compensation
         Ack(v.session); assert(v.session.znsPortraitRestorePending);

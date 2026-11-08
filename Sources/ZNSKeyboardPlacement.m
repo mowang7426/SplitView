@@ -57,6 +57,7 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 @property(nonatomic) BOOL independent;
 @property(nonatomic) BOOL keyboardHidden;
 @property(nonatomic) BOOL clientKeyboardShown;
+@property(nonatomic) uint64_t znsHiddenProofRequest,znsHiddenProofPhase;
 @property(nonatomic) BOOL clientVisibilityKnown;
 @property(nonatomic) BOOL clientKeyboardWillHide;
 @property(nonatomic) NSUInteger portraitKeyboardVisualPhaseGeneration;
@@ -557,7 +558,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                         [owner schedule]; return;
                     }
                     // Bridge unavailable only after focus/input actually ended.
-                    [owner znsClientDidHide]; [owner schedule]; return;
+                    [owner schedule]; return; // no current App disappearance proof
                 }
                 if (owner.dismissPending) {
                     // Keep the external surface in place through will-hide/frame
@@ -630,7 +631,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     if (!pid || self.invalidated) return;
     self.clientPID=pid; self.clientTokens=[NSMutableArray new];
     __weak typeof(self) weakSelf=self;
-    for (NSString *event in @[@"shown",@"will-hide",@"hidden",@"hide-finished",@"geometry-changed"]) {
+    for (NSString *event in @[@"shown",@"will-hide",@"hidden",@"hide-finished",@"geometry-changed",@"hide-proof"]) {
         int token=0;
         NSString *name=ZNSKeyboardClientEvent(pid,event);
         uint32_t status=notify_register_dispatch(name.UTF8String,&token,dispatch_get_main_queue(),^(int unused){
@@ -756,6 +757,9 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
         self.timer=[NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
             ZNSKeyboardPlacement *owner=weakSelf;
             if (!owner) { [timer invalidate]; return; }
+            if (ZNSReadClientHiddenProof(owner.clientPID,
+                owner.znsHiddenProofRequest,owner.znsHiddenProofPhase)!=2)
+                owner.znsHiddenProofRequest=0; // re-sample unknown/visible, never expire into hidden
             [owner reconcileSafely];
         }];
         [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
@@ -1030,6 +1034,9 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     self.external=external;
     if (![self keyboardMovable]) self.hasDragged=NO;
     if (rotated) { [self schedule]; return; }
+    if (self.portraitExpansion && self.active && !self.suspended && !self.invalidated &&
+        self.clientPID>0 && self.clientPID==ZNSKeyboardClientPID(self) && ZNSKeyboardMatchesFocus(self))
+        [self znsAcceptClientPhase:ZNSReadClientKeyboardPhase(self.clientPID)];
     if (self.clientKeyboardWillHide) return;
     if (self.dismissPending) {
         // Freeze only our reparent/layout work, not UIKit input or animation.

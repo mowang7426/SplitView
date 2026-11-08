@@ -38,6 +38,9 @@
         self.znsPortraitHandoffInFlight=YES;
         @try { ZNSRunPortraitHandoff(^{
             if (![self znsOwnsTemporaryPortraitGeneration:generation] || !self.znsPortraitRestorePending) return;
+            if (self.znsPortraitRestoreOwnership && !self.znsPortraitRestoreOwnership()) {
+                [self znsCancelPortraitRestore]; return;
+            }
             void (^prepareVisual)(void)=self.znsPortraitRestorePrepareVisual;
             self.znsPortraitRestorePrepareVisual=nil;
             if (prepareVisual) prepareVisual();

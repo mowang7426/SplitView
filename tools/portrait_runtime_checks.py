@@ -52,9 +52,9 @@ int main(void) { @autoreleasepool {
     # Execute the actual integration test with deliberate historical faults.
     # Each variant MUST fail an assertion (not compilation, crash, or timeout).
     (tmp/'tools').mkdir();(tmp/'Sources').mkdir()
-    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc','PortraitHideRetryTests.inc']:
+    for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc','PortraitHideRetryTests.inc','PortraitHiddenProofTests.inc']:
         shutil.copy2(p/'tools'/name,tmp/'tools'/name)
-    for name in ['ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
+    for name in ['ZNSClientHiddenProof.inc','ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
         shutil.copy2(p/'Sources'/name,tmp/'Sources'/name)
     faults=[('shown-race','ZNSPortraitPlacement.inc','BOOL continuous=self.portraitCanvasTransitionUntil>CACurrentMediaTime();','BOOL continuous=self.clientKeyboardShown && self.portraitCanvasTransitionUntil>CACurrentMediaTime();'),
             ('shown-expiry','ZNSPortraitPlacement.inc','return visible || self.portraitKeyboardVisibleLatch || continuous;','return visible || continuous;'),
@@ -92,6 +92,13 @@ int main(void) { @autoreleasepool {
         ('hide-retry-missing','ZNSPortraitFloating.inc','[owner znsAttemptPortraitHideRestore:attempt+1 token:token];','(void)attempt;'),
         ('hide-retry-stale-owner','ZNSPortraitFloating.inc','!guard || !guard()) return;','!guard) return;'),
         ('hide-retry-exhaustion-fake-success','ZNSPortraitFloating.inc','[self restorePortraitKeyboardWithDuration:0 options:0];\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;','self.portraitKeyboardExpanded=NO;\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;'),
+    ]
+    faults += [
+        ('hidden-proof-bypass','ZNSPortraitPlacement.inc','self.znsHiddenProofPhase==current && proof==2','self.znsHiddenProofPhase==current && (proof==2 || YES)'),
+        ('hidden-proof-stale-phase','ZNSClientHiddenProof.inc','expected!=current','NO'),
+        ('hidden-proof-visible-collapses','ZNSClientHiddenProof.inc','return liveVisibility==1?1:liveVisibility==2?2:0;','return liveVisibility==1?2:liveVisibility==2?2:0;'),
+        ('hidden-proof-unknown-collapses','ZNSClientHiddenProof.inc','return liveVisibility==1?1:liveVisibility==2?2:0;','return liveVisibility==1?1:liveVisibility==2?2:2;'),
+        ('hidden-proof-handoff-stale','ZNSPortraitPlacement.inc','ZNSReadClientHiddenProof(pid,owner.znsHiddenProofRequest,owner.znsHiddenProofPhase)==2','YES'),
     ]
     for name,file,old,new in faults:
         f=tmp/'Sources'/file;original=f.read_text();assert original.count(old)==1

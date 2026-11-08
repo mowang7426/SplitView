@@ -10,7 +10,7 @@ static void HideRetryTests(void) {
     CGRect original=v.frame;
     Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
     [p znsAcceptClientPhase:ZNSClientKeyboardShown];
-    [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
+    ConfirmHidden(p); v.session.layoutInFlight=YES; Publish(m,p,YES);
     assert(v.portraitKeyboardExpanded && !v.session.znsPortraitRestorePending && v.portraitKeyboardHideRetryActive);
     v.session.layoutInFlight=NO;
     HideRetryStep(); assert(v.session.znsPortraitRestorePending);
@@ -22,7 +22,7 @@ static void HideRetryTests(void) {
     for (NSUInteger mode=0;mode<7;mode++) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
         [p znsAcceptClientPhase:ZNSClientKeyboardShown];
-        [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
+        ConfirmHidden(p); v.session.layoutInFlight=YES; Publish(m,p,YES);
         assert(v.portraitKeyboardHideRetryActive);
         v.session.layoutInFlight=NO;
         NSUInteger updates=v.session.scene.updates;
@@ -43,7 +43,7 @@ static void HideRetryTests(void) {
     for(NSUInteger mode=0;mode<3;mode++) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
         [p znsAcceptClientPhase:ZNSClientKeyboardShown];
-        [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
+        ConfirmHidden(p); v.session.layoutInFlight=YES; Publish(m,p,YES);
         v.session.layoutInFlight=NO; HideRetryStep();
         assert(v.session.znsPortraitRestorePending);
         CGSize expandedCanvas=v.session.hostView.referenceSize;
@@ -72,7 +72,7 @@ static void HideRetryTests(void) {
     m=Manager(&p); v=m.floating; original=v.frame;
     Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
     [p znsAcceptClientPhase:ZNSClientKeyboardShown];
-    [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
+    ConfirmHidden(p); v.session.layoutInFlight=YES; Publish(m,p,YES);
     id snapshot=v.session.temporaryPortraitSettings;
     for(NSUInteger i=0;i<3;i++) HideRetryStep();
     v.session.layoutInFlight=NO; v.session.hostView.rejectNext=YES;

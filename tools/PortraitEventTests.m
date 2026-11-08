@@ -20,6 +20,17 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
     ZNSClientKeyboardUnknown=0, ZNSClientKeyboardShown=1,
     ZNSClientKeyboardWillHide=2, ZNSClientKeyboardHidden=3
 };
+#include "../Sources/ZNSClientHiddenProof.inc"
+static uint64_t ZNSMockPhase=101,ZNSMockRequest,ZNSMockResponse,ZNSMockExpected;
+static NSInteger ZNSMockLive=2;
+static uint64_t ZNSReadClientKeyboardPhaseWord(pid_t pid) { return pid==42?ZNSMockPhase:0; }
+static uint64_t ZNSRequestClientHiddenProof(pid_t pid,uint64_t phase) {
+    assert(pid==42); ZNSMockExpected=phase; ZNSMockResponse=0; return ++ZNSMockRequest;
+}
+static NSInteger ZNSReadClientHiddenProof(pid_t pid,uint64_t request,uint64_t phase) {
+    if (pid!=42 || !request || request!=ZNSMockResponse || phase!=ZNSMockExpected) return 0;
+    return ZNSClientResolveHiddenProof(phase,ZNSMockPhase,ZNSMockLive);
+}
 static NSDictionary *ZNSPortraitRestoreTiming;
 static NSUInteger ZNSVisibilityPublications;
 static void ZNSPublishKeyboardVisibility(void) { ZNSVisibilityPublications++; }
@@ -122,6 +133,7 @@ static BOOL ZNSKeyboardInputPresent(id input) { (void)input; return ZNSInput; }
 static id ZNSKeyboardObject(id object,NSString *key) { (void)key; return object; }
 static id ZNSActiveKeyboardDelegate(void) { return @1; }
 @interface ZNSKeyboardPlacement : ZNSTempKeyboard
+@property(nonatomic) uint64_t znsHiddenProofRequest,znsHiddenProofPhase;
 @property(nonatomic) BOOL portraitExpansion,active,suspended,invalidated,keyboardHidden,dismissPending,explicitlyDismissed,mutating,clientVisibilityKnown,clientKeyboardShown,clientKeyboardWillHide,portraitKeyboardVisibleLatch,attached;
 @property(nonatomic) CFTimeInterval portraitCanvasTransitionUntil,hiddenAt;
 @property(nonatomic) CGRect portraitKeyboardFrame,geometryBounds,geometryContent,clientKeyboardRegion,reportedKeyboardFrame;
@@ -170,6 +182,13 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 #define dispatch_async(queue,...) ZNSEnqueue((__VA_ARGS__),NO)
 #define ZNSVisualSynchronousTest(...) (__VA_ARGS__)()
 #include "../Sources/ZNSPortraitVisualEvent.inc"
+static void ConfirmHidden(ZNSKeyboardPlacement *p) {
+    ZNSMockPhase=((ZNSMockPhase>>2)+1)*4+ZNSClientKeyboardHidden;
+    ZNSMockLive=2;
+    [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
+    ZNSMockResponse=ZNSMockRequest;
+    [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
+}
 @implementation ZNSKeyboardPlacement
 - (BOOL)externalKeyboardVisible { return self.attached && self.active && !self.suspended && !self.invalidated && !self.keyboardHidden && !self.dismissPending; }
 - (void)setMutating:(BOOL)value { _mutating=value; if(value) { self.attached=NO; self.restores++; } }
@@ -243,6 +262,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 #include "../Sources/ZNSPortraitManager.inc"
 @end
 static ZNSWindowManager *Manager(ZNSKeyboardPlacement **placement) {
+    ZNSMockPhase=101; ZNSMockResponse=0; ZNSMockExpected=0; ZNSMockLive=2;
     ZNSWindowManager *m=[ZNSWindowManager new]; m.enabled=YES; m.window=[UIWindow new];
     UIView *root=[UIView new]; root.bounds=CGRectMake(0,0,390,844); root.safeAreaInsets=(UIEdgeInsets){47,0,34,0};
     ZNSFloatingView *v=[ZNSFloatingView new]; v.ready=YES; v.frame=CGRectMake(50,180,290,560); v.expandedFrame=v.frame;
@@ -283,6 +303,7 @@ static void Publish(ZNSWindowManager *m,ZNSKeyboardPlacement *p,BOOL ended) {
 }
 #include "PortraitVisualTests.inc"
 #include "PortraitHideRetryTests.inc"
+#include "PortraitHiddenProofTests.inc"
 int main(void) { @autoreleasepool {
     assert(ZNSSceneTestsMain()==0);
     ZNSAnimationEnds=[NSMutableArray new];
@@ -368,7 +389,7 @@ int main(void) { @autoreleasepool {
         assert(view.layouts==layouts); // no old-canvas layout before restore
         [view restorePortraitKeyboardWithDuration:0.4 options:0]; // reentry ignored
     };
-    [p znsAcceptClientPhase:ZNSClientKeyboardHidden];
+    ConfirmHidden(p);
     Publish(m,p,YES);
     assert(v.session.znsPortraitRestorePending && v.portraitKeyboardExpanded);
     ClientLayout(v.session);
@@ -376,12 +397,12 @@ int main(void) { @autoreleasepool {
     assert(v.session.scene.updates==updates+1 && !v.session.scene.lastContext);
     assert(v.layouts==layouts+1 && CGSizeEqualToSize(v.lastLayoutCanvas,CGSizeMake(390,844)));
     assert(!v.portraitKeyboardRestoring); Drain(ZNSAnimationEnds); assert(!v.portraitKeyboardRestoring);
-    [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
+    ConfirmHidden(p); Publish(m,p,YES);
     assert(v.session.scene.updates==updates+1);
     Ack(v.session); Original(v.session);
     // Real App did-hide wins even during a geometry refresh and before a scene ack.
     [p znsBeginPortraitGeometryRefresh];
-    [p znsClientDidHide]; Publish(m,p,YES); Ack(v.session);
+    ConfirmHidden(p); Publish(m,p,YES); Ack(v.session);
     assert(!v.portraitKeyboardExpanded && !v.portraitKeyboardSuppressed);
     assert(CGRectEqualToRect(v.frame,original)); Original(v.session);
     assert(![p znsPortraitPresentationEligible] && !p.portraitCanvasTransitionUntil);
@@ -404,7 +425,7 @@ int main(void) { @autoreleasepool {
         CGRect bounds=w.superview.bounds; w.superview.bounds=CGRectZero;
         Publish(n,q,NO); assert(w.portraitKeyboardExpanded && w.session.temporaryPortraitSettings);
         w.superview.bounds=bounds; Publish(n,q,NO);
-        [q znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(n,q,YES);
+        ConfirmHidden(q); Publish(n,q,YES);
         assert(w.session.znsPortraitRestorePending && w.portraitKeyboardExpanded);
         ClientLayout(w.session);
         assert(!w.portraitKeyboardExpanded && CGRectEqualToRect(w.frame,narrow) &&
@@ -444,7 +465,7 @@ int main(void) { @autoreleasepool {
     p.attached=NO; p.portraitCanvasTransitionUntil=0; Publish(m,p,NO);
     assert(v.portraitKeyboardSuppressed);
     p.attached=YES; Publish(m,p,NO); assert(!v.portraitKeyboardExpanded);
-    [p znsClientDidHide]; Publish(m,p,YES); assert(!v.portraitKeyboardSuppressed);
+    ConfirmHidden(p); Publish(m,p,YES); assert(!v.portraitKeyboardSuppressed);
     Ack(v.session); Drain(ZNSDeadlines); Drain(ZNSReady);
     // Scene rejection does not leave a full-width frame with an old canvas.
     m=Manager(&p); v=m.floating; original=v.frame; v.session.hostView.rejectNext=YES;
@@ -488,7 +509,7 @@ int main(void) { @autoreleasepool {
     };
     BOOL enumerationFailed=NO;
     p.active=NO; // lifecycle path stays synchronous, even if DidHide also arrives
-    @try { [p znsClientDidHide]; Publish(m,p,YES); }
+    @try { ConfirmHidden(p); Publish(m,p,YES); }
     @catch (__unused NSException *exception) { enumerationFailed=YES; }
     assert(!enumerationFailed && m.windows.count==1 && !m.floating);
     Ack(v.session);
@@ -533,7 +554,7 @@ int main(void) { @autoreleasepool {
     assert(ZNSAnimations==beforeAnimations && ZNSWithoutAnimations==beforeWithout+1);
     assert(!v.portraitKeyboardRestoring && !v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,original));
     assert(CGRectIsEmpty(v.portraitKeyboardSavedFrame)); Original(v.session);
-    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests(); HideRetryTests();
+    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests(); HideRetryTests(); HiddenProofTests();
     puts("PASS production event chain: legacy explicit force restore preserves duration/options and completion guard; normal DidHide requires client-size confirmation; zero-duration lifecycle restore and rejection retry remain covered. UIKit/layout transport MOCKED; NOT device verified.");
     return 0;
 } }

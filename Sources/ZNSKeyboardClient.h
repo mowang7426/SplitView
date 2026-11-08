@@ -9,6 +9,9 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
     ZNSClientKeyboardWillHide=2, ZNSClientKeyboardHidden=3
 };
 ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid);
+uint64_t ZNSReadClientKeyboardPhaseWord(pid_t pid);
+uint64_t ZNSRequestClientHiddenProof(pid_t pid, uint64_t phase);
+NSInteger ZNSReadClientHiddenProof(pid_t pid, uint64_t request, uint64_t phase);
 
 // Native App-window coordinates. No text or responder data crosses processes.
 BOOL ZNSReadClientKeyboardAnimation(pid_t pid, NSTimeInterval *duration, UIViewAnimationOptions *options);
