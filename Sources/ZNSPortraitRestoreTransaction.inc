@@ -4,6 +4,7 @@
     if (!self.znsPortraitRestorePending) return;
     self.znsPortraitRestorePending=NO;
     self.znsPortraitRestorePrepareVisual=nil;
+    self.znsPortraitRestoreOwnership=nil;
     ++self.temporaryPortraitGeneration;
     self.znsPortraitRestoreCompletion=nil;
     // Original scene may already have applied: force next expansion submission.
@@ -16,11 +17,16 @@
     // otherwise the same restore can configure the host and finalize twice,
     // producing a visible one-frame split-window jump after keyboard dismissal.
     if (self.znsPortraitHandoffInFlight || !self.znsPortraitRestorePending ||
-        ![self znsOwnsTemporaryPortraitGeneration:generation]) return;
+        self.temporaryPortraitGeneration!=generation) return;
+    if (self.znsPortraitRestoreOwnership && !self.znsPortraitRestoreOwnership()) {
+        [self znsCancelPortraitRestore];
+        return; // a fresh Shown/lifecycle/owner epoch must never hand off late
+    }
+    BOOL owns=[self znsOwnsTemporaryPortraitGeneration:generation];
     BOOL sceneMatches=NO;
     @try {
         id applied=ZNSGet(self.scene,@"settings");
-        sceneMatches=ZNSSettingsReadAPI(applied) && ZNSGeometryRectNear([applied frame],[self.temporaryPortraitSettings frame]);
+        sceneMatches=owns && ZNSSettingsReadAPI(applied) && ZNSGeometryRectNear([applied frame],[self.temporaryPortraitSettings frame]);
     } @catch (__unused NSException *exception) {}
     BOOL sizeAcknowledged=[self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest];
     // Strict client enumeration can remain ambiguous (e.g. extra app windows).
@@ -45,6 +51,7 @@
             void (^done)(BOOL)=self.znsPortraitRestoreCompletion;
             self.znsPortraitRestoreCompletion=nil;
             self.znsPortraitRestorePending=NO;
+            self.znsPortraitRestoreOwnership=nil;
             self.temporaryPortraitSettings=nil;
             self.temporaryPortraitCanvas=CGSizeZero;
             self.temporaryPortraitFrame=CGRectZero;
@@ -71,6 +78,12 @@
     // No blind collapse on timeout. Re-submit expanded geometry, retain original
     // snapshot for retry; caller returns transform to expanded presentation.
     NSUInteger rollbackGeneration=self.temporaryPortraitGeneration;
+    if ([self znsPortraitRestoreGateBusy] || self.stopped || self.deviceLockRequested ||
+        self.switcherRemovalRequested || self.landscape) {
+        os_log_error(ZNSLog(),"P12_ROLLBACK_DEFERRED lifecycle/layout owns host; retained recovery snapshot");
+        if (done) done(NO);
+        return;
+    }
     self.temporaryPortraitRestoring=YES;
     @try {
         id current=ZNSGet(self.scene,@"settings");

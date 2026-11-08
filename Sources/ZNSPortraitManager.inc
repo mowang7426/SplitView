@@ -55,7 +55,7 @@
                 __weak typeof(self) weakManager=self;
                 __weak ZNSFloatingView *weakOwner=owner;
                 __weak ZNSSceneSession *weakSession=owner.session;
-                __weak ZNSKeyboardPlacement *weakPlacement=owner.session.keyboardPlacement;
+                __weak typeof(owner.session.keyboardPlacement) weakPlacement=owner.session.keyboardPlacement;
                 BOOL (^sessionGuard)(void)=[owner.session znsPortraitRestoreSessionGuard];
                 BOOL (^hiddenGuard)(void)=[owner.session.keyboardPlacement znsPortraitHiddenRestoreGuard];
                 owner.portraitKeyboardHideRetryGuard=^BOOL{

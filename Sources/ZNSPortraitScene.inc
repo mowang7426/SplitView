@@ -15,7 +15,7 @@
 }
 - (BOOL)znsOwnsTemporaryPortraitGeneration:(NSUInteger)generation {
     return self.temporaryPortraitGeneration==generation && self.temporaryPortraitSettings &&
-        !self.stopped && !self.deviceLockRequested && !self.switcherRemovalRequested && !self.layoutInFlight;
+        (!self.znsPortraitRestoreOwnership || self.znsPortraitRestoreOwnership()) && !self.stopped && !self.deviceLockRequested && !self.switcherRemovalRequested && !self.layoutInFlight;
 }
 - (BOOL)znsTemporaryPortraitStateMatchesFrame:(CGRect)frame {
     @try {

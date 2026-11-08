@@ -95,11 +95,12 @@
         return;
     }
     __weak typeof(self) weakSelf=self;
+    BOOL (^guard)(void)=self.portraitKeyboardHideRetryGuard;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/10),dispatch_get_main_queue(),^{
         typeof(self) owner=weakSelf;
         if (!owner || !owner.portraitKeyboardHideRetryActive ||
             owner.portraitKeyboardHideRetryGeneration!=token ||
-            !owner.portraitKeyboardHideRetryGuard || !owner.portraitKeyboardHideRetryGuard()) return;
+            !guard || !guard()) return;
         [owner znsAttemptPortraitHideRestore:attempt+1 token:token];
     });
 }
@@ -123,6 +124,12 @@
     // Child counter-maps are removed inside the same no-animation host handoff,
     // immediately before ZNSConfigureHostCanvas observes the restored canvas.
     // The completion clears the root transform before normal UIKit layout.
+    BOOL (^retryGuard)(void)=self.portraitKeyboardHideRetryGuard;
+    self.session.znsPortraitRestoreOwnership=^BOOL{
+        typeof(self) owner=weakSelf;
+        return owner && owner.portraitKeyboardHideRetryGeneration==token &&
+            (!retryGuard || retryGuard());
+    };
     self.session.znsPortraitRestorePrepareVisual=^{
         typeof(self) owner=weakSelf;
         if (owner && owner.portraitKeyboardVisualRestoring &&
@@ -145,6 +152,7 @@
     }];
     if (!accepted && !settled) {
         self.session.znsPortraitRestorePrepareVisual=nil;
+        self.session.znsPortraitRestoreOwnership=nil;
         [self clearPortraitKeyboardVisualRestore];
         [self znsRetryPortraitHideRestore:attempt token:token];
     }

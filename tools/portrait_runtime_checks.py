@@ -88,7 +88,7 @@ int main(void) { @autoreleasepool {
         ('restore-grace-disabled','ZNSPortraitRestoreTransaction.inc','BOOL sizeGraceExpired=attempt>=30;','BOOL sizeGraceExpired=NO;'),
         ('restore-scene-bypassed','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && (sizeAcknowledged || sizeGraceExpired)) {','if ((sceneMatches && sizeAcknowledged) || sizeGraceExpired) {'),
         ('hide-retry-missing','ZNSPortraitFloating.inc','[owner znsAttemptPortraitHideRestore:attempt+1 token:token];','(void)attempt;'),
-        ('hide-retry-stale-owner','ZNSPortraitFloating.inc','!owner.portraitKeyboardHideRetryGuard || !owner.portraitKeyboardHideRetryGuard()) return;','!owner.portraitKeyboardHideRetryGuard) return;'),
+        ('hide-retry-stale-owner','ZNSPortraitFloating.inc','!guard || !guard()) return;','!guard) return;'),
         ('hide-retry-exhaustion-fake-success','ZNSPortraitFloating.inc','[self restorePortraitKeyboardWithDuration:0 options:0];\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;','self.portraitKeyboardExpanded=NO;\n        return;\n    }\n    NSUInteger generation=self.portraitKeyboardRestoreGeneration;'),
     ]
     for name,file,old,new in faults:

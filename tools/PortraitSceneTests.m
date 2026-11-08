@@ -68,6 +68,7 @@ static void ZNSEnqueue(void (^block)(void),BOOL timeout) {
 @property(nonatomic) uint64_t restoreRequest,restoreReply;
 - (uint64_t)znsRequestRestoreSize:(CGSize)size;
 - (BOOL)znsRestoreSizeMatches:(uint64_t)request;
+- (BOOL (^)(void))znsPortraitHiddenRestoreGuard;
 @property(nonatomic) NSUInteger requests;
 @property(nonatomic,strong) id focusProof;
 - (void)updateTemporaryPortraitCanvas:(CGSize)canvas;
@@ -75,6 +76,7 @@ static void ZNSEnqueue(void (^block)(void),BOOL timeout) {
 - (void)znsBeginPortraitGeometryRefresh;
 @end
 @implementation ZNSTempKeyboard
+- (BOOL (^)(void))znsPortraitHiddenRestoreGuard { return nil; }
 - (uint64_t)znsRequestRestoreSize:(CGSize)size {
     self.expectedRestoreSize=size; return ++self.restoreRequest;
 }
@@ -128,6 +130,7 @@ static BOOL ZNSConfigureHostCanvas(ZNSTempHost *host,CGSize size,NSInteger orien
 @property(nonatomic,strong) ZNSTempKeyboard *keyboardPlacement;
 @property(nonatomic) CGSize canvasSize,temporaryPortraitCanvas;
 @property(nonatomic,copy) void (^znsPortraitRestorePrepareVisual)(void);
+@property(nonatomic,copy) BOOL (^znsPortraitRestoreOwnership)(void);
 @property(nonatomic) CGRect temporaryPortraitFrame;
 @property(nonatomic) BOOL znsPortraitHandoffInFlight;
 @property(nonatomic) BOOL znsPortraitRestorePending;

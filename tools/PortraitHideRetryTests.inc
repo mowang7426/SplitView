@@ -19,7 +19,7 @@ static void HideRetryTests(void) {
     Drain(ZNSDeadlines); Drain(ZNSReady);
     // Even before asynchronous manager Shown/close processing, the old retry
     // must not mutate the new phase, another owner, or a rotation epoch.
-    for (NSUInteger mode=0;mode<5;mode++) {
+    for (NSUInteger mode=0;mode<7;mode++) {
         m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
         [p znsAcceptClientPhase:ZNSClientKeyboardShown];
         [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
@@ -32,10 +32,29 @@ static void HideRetryTests(void) {
         if(mode==2) v.session.landscape=YES;
         if(mode==3) m.floating=nil;
         if(mode==4) ++v.session.layoutGeneration;
+        if(mode==5) p.clientPID=43;
+        if(mode==6) ++v.portraitKeyboardHideRetryGeneration;
         HideRetryStep();
         assert(!v.session.znsPortraitRestorePending && v.session.scene.updates==updates);
         assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.portraitKeyboardTarget,target));
         Drain(ZNSReady); Drain(ZNSAnimationEnds); Drain(ZNSDeadlines);
+    }
+    // An accepted retry is still guarded until the actual host handoff.
+    for(NSUInteger mode=0;mode<3;mode++) {
+        m=Manager(&p); v=m.floating; Publish(m,p,NO); Ack(v.session); Drain(ZNSDeadlines); p.attached=YES;
+        [p znsAcceptClientPhase:ZNSClientKeyboardShown];
+        [p znsClientDidHide]; v.session.layoutInFlight=YES; Publish(m,p,YES);
+        v.session.layoutInFlight=NO; HideRetryStep();
+        assert(v.session.znsPortraitRestorePending);
+        CGSize expandedCanvas=v.session.hostView.referenceSize;
+        NSUInteger stale=v.session.temporaryPortraitGeneration;
+        if(mode==0) [p znsAcceptClientPhase:ZNSClientKeyboardShown];
+        if(mode==1) v.closing=YES;
+        if(mode==2) ++v.session.layoutGeneration;
+        [v.session znsPollPortraitRestore:stale attempt:30];
+        assert(!v.session.znsPortraitRestorePending && v.session.temporaryPortraitSettings);
+        assert(v.portraitKeyboardExpanded && CGSizeEqualToSize(v.session.hostView.referenceSize,expandedCanvas));
+        Drain(ZNSDeadlines); Drain(ZNSReady); Drain(ZNSAnimationEnds);
     }
     // Exhaust all four ordinary submissions behind the transient layout gate.
     // At the final bounded fallback the real host rejects: preserve snapshot,

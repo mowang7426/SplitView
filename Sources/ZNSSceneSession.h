@@ -53,6 +53,7 @@
 - (BOOL)applyTemporaryPortraitFrame:(CGRect)frame failure:(void (^)(void))failure;
 // Cleared/called inside the existing no-animation handoff before host dimensions change.
 @property(nonatomic,copy) void (^znsPortraitRestorePrepareVisual)(void);
+@property(nonatomic,copy) BOOL (^znsPortraitRestoreOwnership)(void);
 @property(nonatomic,readonly) BOOL znsPortraitHandoffInFlight;
 @property(nonatomic,readonly) BOOL znsPortraitRestorePending;
 // Main-thread, read-only guards for bounded UI recovery; never acquire focus.
