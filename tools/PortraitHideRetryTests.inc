@@ -54,6 +54,16 @@ static void HideRetryTests(void) {
         [v.session znsPollPortraitRestore:stale attempt:30];
         assert(!v.session.znsPortraitRestorePending && v.session.temporaryPortraitSettings);
         assert(v.portraitKeyboardExpanded && CGSizeEqualToSize(v.session.hostView.referenceSize,expandedCanvas));
+        if(mode==0) {
+            NSUInteger updates=v.session.scene.updates, animations=ZNSAnimations;
+            CGRect target=v.portraitKeyboardTarget;
+            [v expandPortraitKeyboardToFrame:target duration:0.2 options:0];
+            assert(v.session.scene.updates==updates+1 && ZNSAnimations==animations);
+            assert(CGRectEqualToRect(v.session.scene.settings.frame,target) && v.portraitKeyboardExpanded);
+            Ack(v.session);
+            [v.session znsPollPortraitRestore:stale attempt:120];
+            assert(v.portraitKeyboardExpanded && CGSizeEqualToSize(v.session.hostView.referenceSize,expandedCanvas));
+        }
         Drain(ZNSDeadlines); Drain(ZNSReady); Drain(ZNSAnimationEnds);
     }
     // Exhaust all four ordinary submissions behind the transient layout gate.

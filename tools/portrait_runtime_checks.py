@@ -84,6 +84,8 @@ int main(void) { @autoreleasepool {
         ('visual-chrome-pop','ZNSPortraitCompensation.inc','[self znsSetPortraitChromeAlpha:enabled?0:1];','[self znsSetPortraitChromeAlpha:1];'),
     ]
     faults += [
+        ('hide-accepted-ownership-lost','ZNSPortraitFloating.inc','(!retryGuard || retryGuard());','(!retryGuard || YES || retryGuard());'),
+        ('hide-reshow-scene-not-resubmitted','ZNSPortraitScene.inc','return self.temporaryPortraitSettings && CGRectIsEmpty(self.temporaryPortraitFrame);','return NO;'),
         ('restore-grace-skipped','ZNSPortraitRestoreTransaction.inc','BOOL sizeGraceExpired=attempt>=30;','BOOL sizeGraceExpired=YES;'),
         ('restore-grace-disabled','ZNSPortraitRestoreTransaction.inc','BOOL sizeGraceExpired=attempt>=30;','BOOL sizeGraceExpired=NO;'),
         ('restore-scene-bypassed','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && (sizeAcknowledged || sizeGraceExpired)) {','if ((sceneMatches && sizeAcknowledged) || sizeGraceExpired) {'),

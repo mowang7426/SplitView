@@ -59,6 +59,7 @@
 // Main-thread, read-only guards for bounded UI recovery; never acquire focus.
 - (BOOL (^)(void))znsPortraitRestoreSessionGuard;
 - (BOOL)znsPortraitRestoreGateBusy;
+- (BOOL)znsPortraitExpansionNeedsResubmission;
 - (BOOL)znsRestorePortraitAfterHide:(void (^)(BOOL success))completion;
 - (void)znsCancelPortraitRestore;
 - (BOOL)restoreTemporaryPortraitCanvas;

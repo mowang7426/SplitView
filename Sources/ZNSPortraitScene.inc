@@ -10,6 +10,9 @@
             !owner.deviceLockRequested && !owner.switcherRemovalRequested && !owner.landscape;
     } copy];
 }
+- (BOOL)znsPortraitExpansionNeedsResubmission {
+    return self.temporaryPortraitSettings && CGRectIsEmpty(self.temporaryPortraitFrame);
+}
 - (BOOL)znsPortraitRestoreGateBusy {
     return self.layoutInFlight || self.temporaryPortraitRestoring;
 }

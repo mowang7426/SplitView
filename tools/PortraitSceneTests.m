@@ -140,6 +140,7 @@ static BOOL ZNSConfigureHostCanvas(ZNSTempHost *host,CGSize size,NSInteger orien
 - (BOOL)znsRestorePortraitAfterHide:(void (^)(BOOL))completion;
 - (BOOL (^)(void))znsPortraitRestoreSessionGuard;
 - (BOOL)znsPortraitRestoreGateBusy;
+- (BOOL)znsPortraitExpansionNeedsResubmission;
 - (void)znsCancelPortraitRestore;
 - (void)znsPollPortraitRestore:(NSUInteger)generation attempt:(NSUInteger)attempt;
 - (void)znsFailPortraitRestore:(NSUInteger)generation;

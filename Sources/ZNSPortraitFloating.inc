@@ -184,6 +184,19 @@
         [self cancelPortraitKeyboardVisualRestoreWithDuration:duration options:options];
     [self znsResumePortraitAfterHide];
     if (self.portraitKeyboardSuppressed || self.portraitKeyboardRestoring || self.portraitKeyboardVisualRestoring) return;
+    // A stale hide may have been cancelled by the phase guard before the new
+    // Shown reaches this view. Re-submit that invalidated scene even when the
+    // visible target is unchanged; do not restart an ordinary same-frame animation.
+    if (self.portraitKeyboardExpanded && CGRectEqualToRect(frame,self.portraitKeyboardTarget) &&
+        [self.session znsPortraitExpansionNeedsResubmission]) {
+        CGRect screenFrame=[self.superview convertRect:frame toView:self.window];
+        __weak typeof(self) weakSelf=self;
+        BOOL submitted=[self.session applyTemporaryPortraitFrame:screenFrame failure:^{
+            [weakSelf restorePortraitKeyboardWithDuration:0 options:0];
+        }];
+        if (!submitted) [self restorePortraitKeyboardWithDuration:0 options:0];
+        return;
+    }
     if (self.portraitKeyboardExpanded && CGRectEqualToRect(frame,self.portraitKeyboardTarget)) return;
     self.portraitKeyboardRestoreGeneration++;
     if (!self.portraitKeyboardExpanded) {
