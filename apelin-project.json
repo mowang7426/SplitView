@@ -165,7 +165,7 @@
   "package": {
     "id": "com.zengniu.splitview",
     "name": "曾牛-分屏🐮",
-    "version": "0.7.66+keyboard14",
+    "version": "0.7.66+keyboard15",
     "description": "Experimental live app windows with Home Screen icon gestures and basic docking.",
     "icon": "https://ys8smjzty4-dot.github.io/ZengNiupackages/depictions/com.zengniu.splitview/icon.png",
     "author": "ZengNiu",

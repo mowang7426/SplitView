@@ -21,9 +21,16 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
     ZNSClientKeyboardWillHide=2, ZNSClientKeyboardHidden=3
 };
 #include "../Sources/ZNSClientHiddenProof.inc"
+#include "../Sources/ZNSClientHideLifecycle.inc"
+static ZNSClientHideLifecycle ZNSMockNativeHide;
+static NSInteger ZNSMockGuide;
 static uint64_t ZNSMockPhase=101,ZNSMockRequest,ZNSMockResponse,ZNSMockExpected;
 static NSInteger ZNSMockLive=2,ZNSMockReplyLive=2;
-static void ZNSMockReply(void) { ZNSMockReplyLive=ZNSMockLive; ZNSMockResponse=ZNSMockRequest; }
+static void ZNSMockReply(void) {
+    ZNSMockReplyLive=ZNSClientCompletedHideProof(&ZNSMockNativeHide,ZNSMockExpected,
+        ZNSMockPhase,ZNSMockLive,42,7,ZNSMockGuide);
+    ZNSMockResponse=ZNSMockRequest;
+}
 static uint64_t ZNSReadClientKeyboardPhaseWord(pid_t pid) { return pid==42?ZNSMockPhase:0; }
 static ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) { return (ZNSClientKeyboardPhase)(ZNSReadClientKeyboardPhaseWord(pid)&3); }
 static uint64_t ZNSRequestClientHiddenProof(pid_t pid,uint64_t phase) {
@@ -316,6 +323,7 @@ static void Publish(ZNSWindowManager *m,ZNSKeyboardPlacement *p,BOOL ended) {
 #include "PortraitVisualTests.inc"
 #include "PortraitHideRetryTests.inc"
 #include "PortraitHiddenProofTests.inc"
+#include "PortraitNativeHideTests.inc"
 #include "PortraitHiddenSurfaceTests.inc"
 int main(void) { @autoreleasepool {
     assert(ZNSSceneTestsMain()==0);
@@ -567,7 +575,7 @@ int main(void) { @autoreleasepool {
     assert(ZNSAnimations==beforeAnimations && ZNSWithoutAnimations==beforeWithout+1);
     assert(!v.portraitKeyboardRestoring && !v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,original));
     assert(CGRectIsEmpty(v.portraitKeyboardSavedFrame)); Original(v.session);
-    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests(); HideRetryTests(); HiddenProofTests(); HiddenSurfaceRecoveryTests();
+    VisualTests(); VisualSafetyTests(); RestoreOwnershipTests(); LayeredHandoffTests(); HideRetryTests(); HiddenProofTests(); HiddenSurfaceRecoveryTests(); NativeHideClosureTests();
     puts("PASS production event chain: legacy explicit force restore preserves duration/options and completion guard; normal DidHide requires client-size confirmation; zero-duration lifecycle restore and rejection retry remain covered. UIKit/layout transport MOCKED; NOT device verified.");
     return 0;
 } }

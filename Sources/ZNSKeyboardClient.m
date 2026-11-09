@@ -182,6 +182,7 @@ static UIView *ZNSClientFirstResponder(UIView *root, NSUInteger *budget) {
     }
     return nil;
 }
+#include "ZNSClientNativeHide.inc"
 static NSString *const ZNSMenuFields[]={@"menu.serial",@"menu.x",@"menu.y",@"menu.w",@"menu.h",@"menu.cw",@"menu.ch",@"menu.time"};
 static int ZNSMenuTokens[8];
 static BOOL ZNSMenuReady;
@@ -314,7 +315,7 @@ void ZNSInstallKeyboardClient(void) {
                 uint64_t request=ZNSHiddenRead(getpid(),@"hidden.request");
                 uint64_t expected=ZNSHiddenRead(getpid(),@"hidden.expected");
                 NSInteger live=ZNSClientLiveKeyboardVisibility();
-                NSInteger proof=ZNSClientResolveHiddenProof(expected,ZNSReadClientKeyboardPhaseWord(getpid()),live);
+                NSInteger proof=ZNSClientNativeHiddenProof(expected,live);
                 ZNSHiddenWrite(getpid(),@"hidden.response",0);
                 ZNSHiddenWrite(getpid(),@"hidden.phase",expected);
                 ZNSHiddenWrite(getpid(),@"hidden.visibility",(uint64_t)proof);
@@ -356,6 +357,7 @@ void ZNSInstallKeyboardClient(void) {
                 // Publish phase BEFORE any geometry event. A late shown/geometry
                 // callback must never cancel a newer WillHide transaction.
                 if (hide || show) ZNSClientPublishPhase(willHide?ZNSClientKeyboardWillHide:didHide?ZNSClientKeyboardHidden:ZNSClientKeyboardShown);
+                ZNSClientObserveNativeHide(note,willHide,didHide,show);
                 // WillHide carries the only transition timing shared by UIKit,
                 // but is not disappearance. Keep the last valid geometry/live
                 // responder through that transaction; clearing it here made the
@@ -384,6 +386,12 @@ void ZNSInstallKeyboardClient(void) {
                 } else if (show) ZNSClientPost(@"shown");
             }];
             [observers addObject:token];
+        }
+        for (NSString *name in @[UIApplicationDidEnterBackgroundNotification,UIDeviceOrientationDidChangeNotification]) {
+            [observers addObject:[center addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+                ZNSClientHideReset(&ZNSClientNativeHide);
+                ZNSClientGuideWasVisible=NO;
+            }]];
         }
         // A scene frame update need not emit another keyboard notification.
         // Re-convert the last native SCREEN rectangle through the live window;
