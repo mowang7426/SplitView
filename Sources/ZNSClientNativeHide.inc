@@ -39,6 +39,7 @@ static uintptr_t ZNSClientObserveHideOwner(void) {
     if (!CGRectEqualToRect(bounds,ZNSClientHideBounds) || !CGRectEqualToRect(space,ZNSClientHideSceneBounds) ||
         !CGRectEqualToRect(screen,ZNSClientHideScreenBounds)) {
         ++ZNSClientHideLayoutEpoch;
+        ZNSClientGuideWasVisible=NO; // old-canvas guide visibility cannot prove this layout
         ZNSClientHideBounds=bounds; ZNSClientHideSceneBounds=space; ZNSClientHideScreenBounds=screen;
     }
     UIWindow *current=ZNSClientUniqueInputWindow();
