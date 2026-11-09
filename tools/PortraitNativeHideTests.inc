@@ -17,6 +17,9 @@ static void NativeHideClosureTests(void) {
         assert(p.keyboardHidden && v.session.znsPortraitRestorePending);
         [v.session znsPollPortraitRestore:v.session.temporaryPortraitGeneration attempt:30];
         assert(!v.portraitKeyboardExpanded && !v.session.znsPortraitRestorePending);
+        if (ZNSClientMayPublishShow(false,ZNSMockPhase)) ZNSMockPhase=105;
+        assert(ZNSMockPhase==103); // delayed DidShow has no new-show authority
+        assert(ZNSClientMayPublishShow(true,ZNSMockPhase));
         Drain(ZNSDeadlines); Drain(ZNSReady); Drain(ZNSAnimationEnds);
         // Revoke cached proof with a real new App Shown, not stale surface.
         ZNSMockPhase=105; ZNSMockLive=0; ZNSMockGuide=1;

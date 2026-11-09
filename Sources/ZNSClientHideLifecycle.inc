@@ -8,6 +8,11 @@ typedef struct {
     uintptr_t owner;
     bool paired, completed;
 } ZNSClientHideLifecycle;
+static bool ZNSClientMayPublishShow(bool willShow,uint64_t current) {
+    // DidShow completes only an already-started Show. It must not manufacture
+    // a new Show generation after a later WillHide/DidHide (or bridge startup).
+    return willShow || (current&3)==ZNSClientKeyboardShown;
+}
 static void ZNSClientHideReset(ZNSClientHideLifecycle *s) {
     ++s->generation; s->willGeneration=0; s->hiddenPhase=0;
     s->paired=false; s->completed=false;

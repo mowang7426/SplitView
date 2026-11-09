@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 typedef long NSInteger;
-enum { ZNSClientKeyboardHidden=3 };
+enum { ZNSClientKeyboardShown=1, ZNSClientKeyboardHidden=3 };
 #include "../Sources/ZNSClientHiddenProof.inc"
 #include "../Sources/ZNSClientHideLifecycle.inc"
 static void Complete(ZNSClientHideLifecycle *s) {
@@ -14,6 +14,10 @@ static NSInteger Proof(ZNSClientHideLifecycle *s,NSInteger live,NSInteger guide)
 }
 int main(void) {
     ZNSClientHideLifecycle s={0};
+    for (uint64_t phase=0;phase<8;phase++) {
+        assert(ZNSClientMayPublishShow(true,phase)); // a new WillShow can reopen
+        assert(ZNSClientMayPublishShow(false,phase)==((phase&3)==1));
+    }
     assert(Proof(&s,0,2)==0); // empty guide without lifecycle is not absence
     for (unsigned repeat=0;repeat<8;repeat++) {
         Complete(&s);

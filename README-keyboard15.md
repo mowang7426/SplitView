@@ -5,7 +5,9 @@ Version: `0.7.66+keyboard15`. No default branch, device installation, respring o
 
 ## Evidence and scope
 
-The new 12,370,645-byte recording is 6.043356 seconds, 886x1920. ffmpeg 2fps frames and Apple Vision OCR locate keyboard keys at ~1.25/2.25s, absent by ~3.25s, with the split title still at normalized y~0.741 at ~4.25/5.25/5.75s. This supports a retained expanded presentation after keyboard dismissal, not a demonstrated private-selector failure. No target UIKit selector availability, phase messages, PID or application bundle identity can be proved from OCR alone.
+The new 12,370,645-byte recording is 6.043356 seconds, 886x1920. After initial 2fps extraction, exact seeks + Apple Vision OCR find keyboard keys at 2.0/3.0s. The split title normalized width is ~0.123 there, drops to ~0.085 at 3.4/3.6s, then grows to ~0.116 at 3.8s and ~0.123 at 4.0/5.8s. Its version text width grows from ~0.230 at 3.4s to ~0.333 at 4.0/5.8s. This supports a transient shrink followed by renewed enlarged presentation, NOT 'never shrinks at all'. No native image viewing was used. OCR alone cannot prove scene/settings/host frame transactions, target UIKit selector availability, phase messages, PID, or application bundle identity.
+
+The observer also published a fresh Shown for every DidShow, including one delivered after a later Hidden. That can bypass keyboard14's genuinely-new-Shown requirement. Production now accepts DidShow only while the current phase is already Shown; a new WillShow remains able to reopen. This is a code-proven stale completion path, not a claim that this notification was captured from this recording.
 
 keyboard14 makes Hidden a candidate and requires an App-process nonce/phase-bound proof. Its strict UIKeyboardImpl reader intentionally returns unknown for missing class/activeInstance/BOOL selectors or nil instance. Unknown is resampled indefinitely, so a real close has no recovery authority when that API is unsupported. This is a code-proven liveness defect; whether it is this device's exact trigger remains unproven.
 
@@ -28,7 +30,7 @@ Existing client-size ACK grace/retries, applied scene ACK, compensation/host/com
 ## Tests and validation limits
 
 - `tools/ClientHideLifecycleTests.c` includes actual production lifecycle/resolver includes, executes on local clang and CI. It covers permanent unknown/nil-reader semantics, both visible vetoes, no default-guide inference, native pairing, owner/epoch/phase changes, revocation and repeated cycles.
-- `tools/native_hide_runtime_checks.py`: 14 compiled mutations must fail a runtime assertion, never credit a compiler failure.
+- `tools/native_hide_runtime_checks.py`: 16 compiled mutations must fail a runtime assertion, never credit a compiler failure.
 - `tools/PortraitNativeHideTests.inc`: actual existing placement/manager/floating/scene-restore methods fed by the new production resolver, repeating unknown-reader close -> applied restore with missing size ACK -> new App Shown.
 - Existing full production tests and prior mutations remain unchanged except adding the new lifecycle resolver to test transport. Existing three legacy baseline failures remain declared, not waived or weakened.
 - UIKit adapter and notifications are not verified on this user's device. The fallback is intentionally conservative for floating/undocked keyboards, multiple scenes, missing begin/end frame, an unobserved keyboard guide or a resize during hide. These can still retain expansion; collect numeric hide-proof logs rather than add a timeout.

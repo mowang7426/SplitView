@@ -4,6 +4,8 @@ p=pathlib.Path(__file__).resolve().parents[1]
 cc=shutil.which('clang') or shutil.which('cc')
 assert cc
 faults=[
+ ('late-didshow-reopens-hidden','return willShow || (current&3)==ZNSClientKeyboardShown;','return willShow || current || true;'),
+ ('new-willshow-cannot-reopen','return willShow || (current&3)==ZNSClientKeyboardShown;','return (willShow && false) || (current&3)==ZNSClientKeyboardShown;'),
  ('unknown-reader-still-stuck','epoch==s->layoutEpoch && guide==2 ? 2 : 0','epoch==s->layoutEpoch && guide==2 ? 0 : 0'),
  ('private-visible-ignored','if (live==1 || guide==1)','if (guide==1)'),
  ('guide-visible-ignored','if (live==1 || guide==1)','if (live==1)'),
@@ -40,4 +42,4 @@ with tempfile.TemporaryDirectory() as td:
   assert r.returncode!=0 and ('Assertion' in r.stderr or 'assertion' in r.stderr),(name,r.returncode,r.stderr)
   print('PASS production mutation rejected by assertion:',name)
   f.write_text(original)
-print('PASS 14 keyboard15 native lifecycle mutations; no compile-failure credit')
+print('PASS 16 keyboard15 native lifecycle mutations; no compile-failure credit')

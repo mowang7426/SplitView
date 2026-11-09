@@ -354,6 +354,8 @@ void ZNSInstallKeyboardClient(void) {
                 BOOL didHide=[note.name isEqual:UIKeyboardDidHideNotification];
                 BOOL hide=willHide || didHide;
                 BOOL show=[note.name isEqual:UIKeyboardWillShowNotification] || [note.name isEqual:UIKeyboardDidShowNotification];
+                if (show && !ZNSClientMayPublishShow([note.name isEqual:UIKeyboardWillShowNotification],
+                    ZNSReadClientKeyboardPhaseWord(getpid()))) return;
                 // Publish phase BEFORE any geometry event. A late shown/geometry
                 // callback must never cancel a newer WillHide transaction.
                 if (hide || show) ZNSClientPublishPhase(willHide?ZNSClientKeyboardWillHide:didHide?ZNSClientKeyboardHidden:ZNSClientKeyboardShown);
