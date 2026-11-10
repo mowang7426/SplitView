@@ -1,4 +1,7 @@
 #import "ZNSWindowOpening.h"
+#import "ZNSScreenEffects.h"
+#import "ZNSExitShatterGeometry.h"
+#import "ZNSExitShatter.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 
@@ -7,6 +10,7 @@
 }
 @property(nonatomic,weak) UIView *znsView;
 @property(nonatomic,strong) NSMutableArray *znsObservers;
+@property(nonatomic,strong) ZNSScreenEffectSurface *znsSurface;
 - (void)znsCancel;
 - (void)znsClear;
 @end
@@ -16,12 +20,14 @@ static NSHashTable<ZNSWindowOpeningState *> *ZNSWindowOpenings;
 - (void)znsClear {
     // Only our presentation animations. Model alpha/transform were NEVER changed.
     [self.znsView.layer removeAnimationForKey:@"ZNSWindowOpening"];
+    [self.znsSurface removeFromSuperview];self.znsSurface=nil;
     for(id observer in self.znsObservers) [NSNotificationCenter.defaultCenter removeObserver:observer];
     [self.znsObservers removeAllObjects];
     [ZNSWindowOpenings removeObject:self];
 }
 - (void)znsCancel { ZNSOpeningCancel(&znsLife); [self znsClear]; }
 - (void)dealloc {
+    [_znsSurface removeFromSuperview];
     for(id observer in _znsObservers) [NSNotificationCenter.defaultCenter removeObserver:observer];
 }
 @end
@@ -43,6 +49,27 @@ void ZNSWindowOpeningReady(UIView *view,ZNSEntryStyle style,BOOL hostReady,BOOL 
     style=ZNSResolveEntryStyle(style,UIAccessibilityIsReduceMotionEnabled());
     uint64_t token=ZNSOpeningReady(&s->znsLife,true,hostReady,eligible && view.window && !view.hidden,style);
     if(!token) return;
+    // Only one opening texture surface globally, even rapid new hosts.
+    ZNSWindowOpeningCancelAll();
+    ZNSExitShatterCancelAll();
+    if(style>=ZNSEntryScreenFirst && style<=ZNSEntryScreenLast) {
+        double pixels=0;CGFloat scale=view.window.screen.scale;
+        @try {
+            if(view.superview && ZNSShatterSourcePixels(view.bounds.size.width,view.bounds.size.height,scale,&pixels)) {
+                UIView *frozen=[view snapshotViewAfterScreenUpdates:NO];
+                s.znsSurface=ZNSScreenEffectCreate(frozen,(int)style-ZNSEntryScreenFirst,YES,scale);
+                if(s.znsSurface) {
+                    // Sibling shares parent coordinate space; no App scene resize or live transform write.
+                    s.znsSurface.layer.anchorPoint=view.layer.anchorPoint;
+                    s.znsSurface.layer.position=view.layer.position;
+                    s.znsSurface.layer.transform=view.layer.transform;
+                    s.znsSurface.alpha=view.alpha;
+                    [view.superview insertSubview:s.znsSurface aboveSubview:view];
+                }
+            }
+        } @catch(__unused NSException *exception) { [s.znsSurface removeFromSuperview];s.znsSurface=nil; }
+        if(!s.znsSurface) style=ZNSEntryFade;
+    }
     ZNSMotionPlan p=ZNSEntryMotionPlan(style);
     CATransform3D base=view.layer.transform;
     CATransform3D from=CATransform3DTranslate(base,p.dx,p.dy,0);
@@ -61,8 +88,10 @@ void ZNSWindowOpeningReady(UIView *view,ZNSEntryStyle style,BOOL hostReady,BOOL 
     }
     motion.duration=p.duration;
     CABasicAnimation *fade=[CABasicAnimation animationWithKeyPath:@"opacity"];
-    fade.fromValue=@0; fade.toValue=@(view.layer.opacity);fade.duration=p.duration;
+    fade.fromValue=@0; fade.toValue=s.znsSurface?@0:@(view.layer.opacity);fade.duration=p.duration;
+    if(s.znsSurface) { fade.fillMode=kCAFillModeBoth;fade.removedOnCompletion=NO; }
     CAAnimationGroup *group=[CAAnimationGroup animation];group.animations=@[motion,fade];group.duration=p.duration;
+    if(s.znsSurface) { group.fillMode=kCAFillModeBoth;group.removedOnCompletion=NO; }
     group.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
     [view.layer addAnimation:group forKey:@"ZNSWindowOpening"];
     if(!ZNSWindowOpenings) ZNSWindowOpenings=[NSHashTable weakObjectsHashTable];

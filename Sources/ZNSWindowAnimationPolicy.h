@@ -4,9 +4,16 @@
 #include <string.h>
 #include <math.h>
 // Shared production configuration, motion plans and one-shot host lifecycle.
-typedef enum { ZNSExitNone, ZNSExitShatter, ZNSExitReference, ZNSExitShrink, ZNSExitSink, ZNSExitFold, ZNSExitParticles, ZNSExitFade } ZNSExitStyle;
-typedef enum { ZNSEntryNone, ZNSEntrySoft, ZNSEntryRise, ZNSEntryPop, ZNSEntryFade } ZNSEntryStyle;
+typedef enum { ZNSExitNone, ZNSExitShatter, ZNSExitReference, ZNSExitShrink, ZNSExitSink, ZNSExitFold, ZNSExitParticles, ZNSExitFade, ZNSExitScreenFirst, ZNSExitScreenLast=ZNSExitScreenFirst+17 } ZNSExitStyle;
+typedef enum { ZNSEntryNone, ZNSEntrySoft, ZNSEntryRise, ZNSEntryPop, ZNSEntryFade, ZNSEntryScreenFirst, ZNSEntryScreenLast=ZNSEntryScreenFirst+17 } ZNSEntryStyle;
+// Independent implementations, not imported code/assets. Stable preference keys.
+static inline int ZNSScreenIndex(const char *s) {
+    const char *keys[]={"fx_crack","fx_pixel","fx_slice","fx_glitch","fx_crt","fx_flip","fx_vortex","fx_ash","fx_sand","fx_melt","fx_wave","fx_tiles","fx_swirl","fx_peel","fx_flicker","fx_ink","fx_thanos","fx_noise"};
+    if(s) for(int i=0;i<18;i++) if(!strcmp(s,keys[i])) return i;
+    return -1;
+}
 static inline ZNSExitStyle ZNSParseExitStyle(const char *s) {
+    int effect=ZNSScreenIndex(s); if(effect>=0) return (ZNSExitStyle)(ZNSExitScreenFirst+effect);
     if(s) {
         if(!strcmp(s,"none")) return ZNSExitNone;
         if(!strcmp(s,"particles")) return ZNSExitParticles;
@@ -18,6 +25,7 @@ static inline ZNSExitStyle ZNSParseExitStyle(const char *s) {
     return ZNSExitShatter;
 }
 static inline ZNSEntryStyle ZNSParseEntryStyle(const char *s) {
+    int effect=ZNSScreenIndex(s); if(effect>=0) return (ZNSEntryStyle)(ZNSEntryScreenFirst+effect);
     if(s) {
         if(!strcmp(s,"none")) return ZNSEntryNone;
         if(!strcmp(s,"rise")) return ZNSEntryRise;
@@ -26,11 +34,11 @@ static inline ZNSEntryStyle ZNSParseEntryStyle(const char *s) {
     return ZNSEntrySoft;
 }
 static inline ZNSExitStyle ZNSResolveExitStyle(ZNSExitStyle s,bool reduce) {
-    if(s<ZNSExitNone || s>ZNSExitFade) s=ZNSExitShatter;
+    if(s<ZNSExitNone || s>ZNSExitScreenLast) s=ZNSExitShatter;
     return reduce && s!=ZNSExitNone ? ZNSExitFade : s;
 }
 static inline ZNSEntryStyle ZNSResolveEntryStyle(ZNSEntryStyle s,bool reduce) {
-    if(s<ZNSEntryNone || s>ZNSEntryFade) s=ZNSEntrySoft;
+    if(s<ZNSEntryNone || s>ZNSEntryScreenLast) s=ZNSEntrySoft;
     return reduce && s!=ZNSEntryNone ? ZNSEntryFade : s;
 }
 typedef struct {
@@ -57,6 +65,7 @@ static inline ZNSMotionPlan ZNSExitMotionPlan(ZNSExitStyle style,double w,double
         case ZNSExitFold:p.sy=.025;p.angle=-1.15;p.dy=h*.12;p.duration=.34;break;
         case ZNSExitParticles:p.duration=.58;break;
         case ZNSExitFade:break;
+        default:p.duration=.64;break;
     }
     return p;
 }
@@ -68,6 +77,7 @@ static inline ZNSMotionPlan ZNSEntryMotionPlan(ZNSEntryStyle style) {
         case ZNSEntryRise:p.dy=28;p.duration=.28;break;
         case ZNSEntryPop:p.sx=p.sy=.82;p.duration=.36;p.spring=true;break;
         case ZNSEntryFade:break;
+        default:p.duration=.64;break;
     }
     return p;
 }

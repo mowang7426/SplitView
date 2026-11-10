@@ -2,6 +2,8 @@
 #import "ZNSExitShatterLifecycle.h"
 #import "ZNSLayerInput.h"
 #import "ZNSParticlePolicy.h"
+#import "ZNSScreenEffects.h"
+#import "ZNSWindowOpening.h"
 #import <QuartzCore/QuartzCore.h>
 
 @interface ZNSExitShatterWindow : UIWindow @end
@@ -241,7 +243,15 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
 - (void)znsPlaySelected:(uint64_t)token {
     self.znsSource=nil; self.znsHost.hidden=NO;
     ZNSMotionPlan p=ZNSExitMotionPlan(self.znsStyle,self.znsFrozen.bounds.size.width,self.znsFrozen.bounds.size.height);
-    if(self.znsStyle==ZNSExitParticles) {
+    if(self.znsStyle>=ZNSExitScreenFirst && self.znsStyle<=ZNSExitScreenLast) {
+        ZNSScreenEffectSurface *surface=ZNSScreenEffectCreate(self.znsFrozen,(int)self.znsStyle-ZNSExitScreenFirst,NO,self.znsScale);
+        if(surface) {
+            [self.znsFrozen removeFromSuperview];[self.znsStage addSubview:surface];
+            [self.znsShards addObject:surface];
+        } else {
+            self.znsStyle=ZNSExitFade;[self znsPlaySelected:token];return;
+        }
+    } else if(self.znsStyle==ZNSExitParticles) {
         [self.znsFrozen removeFromSuperview];
         for(unsigned i=0;i<self.znsShards.count;i++) {
             ZNSParticle particle;
@@ -304,6 +314,7 @@ BOOL ZNSExitAnimationPresent(UIView *source,ZNSExitStyle style) {
     if(!NSThread.isMainThread || !source.window || ZNSExitShatterCapturing) return NO;
     // At most one presentation: rapid closing cannot accumulate textures/hosts.
     ZNSExitShatterCancelAll();
+    ZNSWindowOpeningCancelAll();
     ZNSExitShatterCapturing=YES;
     ZNSExitShatterPresentation *presentation=[ZNSExitShatterPresentation new];
     presentation.znsSource=source; presentation.znsStyle=style;
