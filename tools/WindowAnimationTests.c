@@ -14,7 +14,7 @@ static void settings(void) {
     assert(ZNSParseExitStyle("NONE")==ZNSExitShatter);
     assert(ZNSParseEntryStyle(NULL)==ZNSEntrySoft);
     assert(ZNSParseEntryStyle("unknown")==ZNSEntrySoft);
-    for(unsigned i=0;i<6;i++) {
+    for(unsigned i=0;i<7;i++) {
         ZNSExitStyle style=ZNSParseExitStyle(znsExitValues[i]);assert(style==(ZNSExitStyle)i);
         for(unsigned reduce=0;reduce<2;reduce++) for(unsigned capture=0;capture<2;capture++) {
             Host h={.capture=capture};

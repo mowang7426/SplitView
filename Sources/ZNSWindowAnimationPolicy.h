@@ -4,11 +4,12 @@
 #include <string.h>
 #include <math.h>
 // Shared production configuration, motion plans and one-shot host lifecycle.
-typedef enum { ZNSExitNone, ZNSExitShatter, ZNSExitReference, ZNSExitShrink, ZNSExitSink, ZNSExitFold, ZNSExitFade } ZNSExitStyle;
+typedef enum { ZNSExitNone, ZNSExitShatter, ZNSExitReference, ZNSExitShrink, ZNSExitSink, ZNSExitFold, ZNSExitParticles, ZNSExitFade } ZNSExitStyle;
 typedef enum { ZNSEntryNone, ZNSEntrySoft, ZNSEntryRise, ZNSEntryPop, ZNSEntryFade } ZNSEntryStyle;
 static inline ZNSExitStyle ZNSParseExitStyle(const char *s) {
     if(s) {
         if(!strcmp(s,"none")) return ZNSExitNone;
+        if(!strcmp(s,"particles")) return ZNSExitParticles;
         if(!strcmp(s,"reference")) return ZNSExitReference;
         if(!strcmp(s,"shrink")) return ZNSExitShrink;
         if(!strcmp(s,"sink")) return ZNSExitSink;
@@ -54,6 +55,7 @@ static inline ZNSMotionPlan ZNSExitMotionPlan(ZNSExitStyle style,double w,double
         case ZNSExitShrink:p.sx=p.sy=.12;p.duration=.28;break;
         case ZNSExitSink:p.sx=p.sy=.92;p.dy=fmin(h*.32,160);p.duration=.32;break;
         case ZNSExitFold:p.sy=.025;p.angle=-1.15;p.dy=h*.12;p.duration=.34;break;
+        case ZNSExitParticles:p.duration=.58;break;
         case ZNSExitFade:break;
     }
     return p;
