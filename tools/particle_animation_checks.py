@@ -8,17 +8,11 @@ assert row['validTitles'][row['validValues'].index('particles')]=='粒子消散'
 assert row['validTitles'][row['validValues'].index('reference')]=='参考·向右消散（近似）'
 assert row['default']=='shatter'
 code=(R/'Sources/ZNSExitShatter.m').read_text()
-assert 'ops.shard=ZNSParticleShardOp' in code and 'ZNSParticleBuild(&current->znsLife' in code
-assert 'if(!ZNSParticleBuild' in code and 'current.znsStyle=ZNSExitFade' in code
-crop=code.split('- (BOOL)znsMakeParticle:(unsigned)index {')[1].split('- (void)znsClearShards')[0]
-assert 'ZNSParticlePlan(' in crop and 'ZNSShatterReservePixels(' in crop
-assert 'self.znsFrozen resizableSnapshotViewFromRect:rect afterScreenUpdates:NO' in crop
-assert 'if(!tile) return NO' in crop
-assert 'animateWithDuration:ZNSParticleDuration delay:particle.delay' in code
-assert 'CGAffineTransformMakeTranslation(particle.dx,particle.dy)' in code
-assert 'tile.alpha=0' in code and 'ZNSParticleMaxDelay:0' in code
+assert 'ZNSFineCreate(self.znsFrozen,self.znsScale)' in code
+assert 'ZNSFineMayStart(znsLife.active,znsLife.generation,token' in code
+assert 'znsMakeParticle:' not in code
 assert 'UIAccessibilityReduceMotionStatusDidChangeNotification' in code
-print('PASS particle wiring: distinct real picker, parser, frozen NO-update content crops, reserve before crop, partial failure fade, runtime plan/delay and inherited cancel/ReduceMotion',flush=True)
+print('PASS migrated particles picker/wiring; retained old 12 policy mutations below are historical tile regressions, not proof of new renderer',flush=True)
 mutations=[
 ('count-unbounded','ZNSParticlePolicy.h','#define ZNSParticleColumns 10','#define ZNSParticleColumns 100'),
 ('coverage-gap','ZNSParticlePolicy.h','.w=w*(col+1)/ZNSParticleColumns-x','.w=.9*(w*(col+1)/ZNSParticleColumns-x)'),

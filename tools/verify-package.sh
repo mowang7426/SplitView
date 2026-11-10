@@ -6,7 +6,7 @@ for deb in packages/*.deb; do
   dpkg-deb -c "$deb"
   test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
   test "$(dpkg-deb -f "$deb" Package)" = com.zengniu.splitview
-  test "$(dpkg-deb -f "$deb" Version)" = 0.7.66+keyboard11.animations3
+  test "$(dpkg-deb -f "$deb" Version)" = 0.7.66+keyboard11.animations4
   dpkg-deb -x "$deb" build/extracted
   shasum -a 256 "$deb"
 done

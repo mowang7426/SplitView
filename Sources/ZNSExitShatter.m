@@ -1,7 +1,7 @@
 #import "ZNSExitShatter.h"
 #import "ZNSExitShatterLifecycle.h"
 #import "ZNSLayerInput.h"
-#import "ZNSParticlePolicy.h"
+#import "ZNSFineParticles.inc"
 #import "ZNSScreenEffects.h"
 #import "ZNSWindowOpening.h"
 #import <QuartzCore/QuartzCore.h>
@@ -42,7 +42,6 @@
 - (void)znsPlay:(BOOL)scatter token:(uint64_t)token;
 - (void)znsDispose;
 - (void)znsCancel;
-- (BOOL)znsMakeParticle:(unsigned)index;
 - (BOOL)znsBuildReference;
 - (void)znsPlaySelected:(uint64_t)token;
 @end
@@ -51,7 +50,6 @@ static BOOL ZNSExitShatterCapturing;
 static ZNSExitShatterPresentation *ZNSShatterObject(void *p) { return (__bridge ZNSExitShatterPresentation *)p; }
 static bool ZNSShatterCaptureOp(void *p) { return [ZNSShatterObject(p) znsCapture]; }
 static bool ZNSShatterShardOp(void *p,unsigned i) { return [ZNSShatterObject(p) znsMakeShard:i]; }
-static bool ZNSParticleShardOp(void *p,unsigned i) { return [ZNSShatterObject(p) znsMakeParticle:i]; }
 static void ZNSShatterClearOp(void *p) { [ZNSShatterObject(p) znsClearShards]; }
 static void ZNSShatterPlayOp(void *p,bool scatter,uint64_t token) { [ZNSShatterObject(p) znsPlay:scatter token:token]; }
 static void ZNSShatterDisposeOp(void *p) { [ZNSShatterObject(p) znsDispose]; }
@@ -145,19 +143,6 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
     [self.znsStage addSubview:replica]; [self.znsShards addObject:replica];
     return YES;
 }
-- (BOOL)znsMakeParticle:(unsigned)index {
-    ZNSParticle p;
-    if(!ZNSParticlePlan(self.znsFrozen.bounds.size.width,self.znsFrozen.bounds.size.height,self.znsScale,index,&p)) return NO;
-    double pixels=self.znsPixelArea;
-    if(!ZNSShatterReservePixels(&pixels,p.w*p.h*self.znsScale*self.znsScale)) return NO;
-    self.znsPixelArea=pixels;
-    CGRect rect=CGRectMake(p.x,p.y,p.w,p.h);
-    UIView *tile=[self.znsFrozen resizableSnapshotViewFromRect:rect afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
-    if(!tile) return NO;
-    tile.frame=rect; tile.userInteractionEnabled=NO;
-    [self.znsStage addSubview:tile]; [self.znsShards addObject:tile];
-    return YES;
-}
 - (void)znsClearShards {
     for(UIView *shard in self.znsShards) { [shard.layer removeAllAnimations]; [shard removeFromSuperview]; }
     [self.znsShards removeAllObjects];
@@ -176,10 +161,6 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
             else {
                 if(current.znsStyle==ZNSExitReference && ![current znsBuildReference]) {
                     [current znsClearShards]; current.znsStyle=ZNSExitFade;
-                }
-                if(current.znsStyle==ZNSExitParticles) {
-                    ZNSShatterOperations ops=ZNSExitShatterOps; ops.shard=ZNSParticleShardOp;
-                    if(!ZNSParticleBuild(&current->znsLife,(__bridge void *)current,ops,token)) current.znsStyle=ZNSExitFade;
                 }
                 [current znsPlay:NO token:token];
             }
@@ -252,19 +233,14 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
             self.znsStyle=ZNSExitFade;[self znsPlaySelected:token];return;
         }
     } else if(self.znsStyle==ZNSExitParticles) {
-        [self.znsFrozen removeFromSuperview];
-        for(unsigned i=0;i<self.znsShards.count;i++) {
-            ZNSParticle particle;
-            if(!ZNSParticlePlan(self.znsFrozen.bounds.size.width,self.znsFrozen.bounds.size.height,self.znsScale,i,&particle)) { [self znsCancel]; return; }
-            UIView *tile=self.znsShards[i];
-            [UIView animateWithDuration:ZNSParticleDuration delay:particle.delay
-                options:UIViewAnimationOptionCurveEaseIn|UIViewAnimationOptionAllowUserInteraction animations:^{
-                CGAffineTransform t=CGAffineTransformMakeTranslation(particle.dx,particle.dy);
-                t=CGAffineTransformRotate(t,particle.angle);
-                tile.transform=CGAffineTransformScale(t,particle.scale,particle.scale);
-                tile.alpha=0;
-            } completion:nil];
+        if(!ZNSFineMayStart(znsLife.active,znsLife.generation,token,self.znsFrozen!=nil,
+                           UIAccessibilityIsReduceMotionEnabled(),self.znsFrozen.bounds.size.width,
+                           self.znsFrozen.bounds.size.height,self.znsScale)) {
+            self.znsStyle=ZNSExitFade;[self znsPlaySelected:token];return;
         }
+        ZNSFineParticleSurface *surface=ZNSFineCreate(self.znsFrozen,self.znsScale);
+        if(!surface) { self.znsStyle=ZNSExitFade;[self znsPlaySelected:token];return; }
+        [self.znsStage addSubview:surface];[self.znsShards addObject:surface];
     } else if(self.znsStyle==ZNSExitReference) {
         [self.znsFrozen removeFromSuperview];
         for(unsigned i=0;i<self.znsShards.count;i++) {
@@ -287,7 +263,7 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
         } completion:nil];
     }
     __weak typeof(self) weakSelf=self;
-    double duration=p.duration+(self.znsStyle==ZNSExitReference?.20:(self.znsStyle==ZNSExitParticles?ZNSParticleMaxDelay:0))+.03;
+    double duration=self.znsStyle==ZNSExitParticles?ZNSFineDuration+.03:p.duration+(self.znsStyle==ZNSExitReference?.20:0)+.03;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(duration*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
         ZNSExitShatterPresentation *current=weakSelf;
         if(current) ZNSShatterFinish(&current->znsLife,(__bridge void *)current,ZNSExitShatterOps,token);

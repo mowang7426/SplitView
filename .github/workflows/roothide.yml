@@ -1,4 +1,4 @@
-name: SplitView RootHide animations3 build
+name: SplitView RootHide animations4 build
 on:
   workflow_dispatch:
   push:
@@ -51,6 +51,7 @@ jobs:
           python3 tools/dark_mode_layout_checks.py | tee build/dark-mode-layout-checks.log
           python3 tools/exit_shatter_checks.py | tee build/exit-shatter-checks.log
           python3 tools/window_animation_checks.py | tee build/window-animation-checks.log
+          python3 tools/fine_particle_checks.py | tee build/fine-particle-checks.log
           python3 tools/particle_animation_checks.py | tee build/particle-animation-checks.log
           python3 tools/screen_effect_checks.py | tee build/screen-effect-checks.log
       - name: Build RootHide package
@@ -61,7 +62,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-animations3
+          name: splitview-roothide-animations4
           path: |
             packages/*.deb
             build/
