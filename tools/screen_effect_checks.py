@@ -22,6 +22,8 @@ assert 'ZNSScreenEffectCreate(frozen,(int)style-ZNSEntryScreenFirst,YES,scale)' 
 assert 'ZNSScreenEffectCreate(self.znsFrozen,(int)self.znsStyle-ZNSExitScreenFirst,NO,self.znsScale)' in exit
 assert 'if(!s.znsSurface) style=ZNSEntryFade' in opening and 'self.znsStyle=ZNSExitFade;[self znsPlaySelected:token];return;' in exit
 assert 'ZNSWindowOpeningCancelAll();' in opening and 'ZNSShatterFinish(&current->znsLife' in exit
+assert 'if(fresh && hostReady && eligible && view.window && !view.hidden && style==ZNSEntryNone)' in opening
+assert 'if(!token) {' in opening and 'ZNSExitShatterCancelAll();' in opening
 assert 'ZNSScreenBuild((__bridge void *)make,effect,ops)' in renderer
 assert 'ZNSScreenPoseAt(effect,i,w,h,t,entry)' in renderer and 'ZNSScreenRectAt(effect,i,w,h,&r)' in renderer
 assert 'ZNSShatterReservePixels(&pixels' in renderer and 'ZNSShatterSourcePixels' in renderer

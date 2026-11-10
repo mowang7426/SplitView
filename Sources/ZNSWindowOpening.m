@@ -47,8 +47,15 @@ void ZNSWindowOpeningReady(UIView *view,ZNSEntryStyle style,BOOL hostReady,BOOL 
         objc_setAssociatedObject(view,&ZNSWindowOpeningKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     style=ZNSResolveEntryStyle(style,UIAccessibilityIsReduceMotionEnabled());
+    BOOL fresh=!s->znsLife.consumed;
     uint64_t token=ZNSOpeningReady(&s->znsLife,true,hostReady,eligible && view.window && !view.hidden,style);
-    if(!token) return;
+    if(!token) {
+        // A fresh host configured for no opening effect still invalidates an old exit overlay.
+        if(fresh && hostReady && eligible && view.window && !view.hidden && style==ZNSEntryNone) {
+            ZNSWindowOpeningCancelAll();ZNSExitShatterCancelAll();
+        }
+        return;
+    }
     // Only one opening texture surface globally, even rapid new hosts.
     ZNSWindowOpeningCancelAll();
     ZNSExitShatterCancelAll();
