@@ -3,11 +3,16 @@ p=pathlib.Path(__file__).resolve().parents[1]
 for f in (p/'Preferences').rglob('*.plist'):
     plistlib.loads(f.read_bytes())
 manifest=json.loads((p/'apelin-project.json').read_text())
-assert manifest['package']['version']=='0.7.66+keyboard11.shatter1'
-assert 'Version: 0.7.66+keyboard11.shatter1' in (p/'control').read_text()
+assert manifest['package']['version']=='0.7.66+keyboard11.animations1'
+assert 'Version: 0.7.66+keyboard11.animations1' in (p/'control').read_text()
 for name in ['Sources/ZNSAuthorization.h','Sources/ZNSKeyboardFocus.m','Preferences/ZNSRootListController.m','Sources/ZNSKeyboardPolicy.h']:
     original=subprocess.check_output(['git','show','e174b5232a0f7e18ed79c25e3e83481de507b0e7:'+name],cwd=p)
-    assert (p/name).read_bytes()==original,name+' unexpectedly changed'
+    current=(p/name).read_bytes()
+    if name=='Preferences/ZNSRootListController.m':
+        added=b'ZNS_SETTINGS_PAGE(ZNSAnimationsListController, @"animations", @"\xe6\xb5\xae\xe7\xaa\x97\xe5\x8a\xa8\xe7\x94\xbb")\n'
+        assert current.count(added)==1
+        current=current.replace(added,b'')
+    assert current==original,name+' unexpectedly changed'
 source=(p/'Sources/ZNSKeyboardPlacement.m').read_text()
 for include in ['ZNSPortraitPlacement.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisualEvent.inc']:
     source=source.replace('#include "'+include+'"',(p/'Sources'/include).read_text())

@@ -31,7 +31,9 @@ assert 'gesture.view==self.bottomBar && self.znsBottomExitAction' in bar
 assert manager.count('self.znsBottomExitAction()') == 1
 assert manager.count('ZNSExitShatterPresent(view)') == 1
 entry = manager.split('- (void)znsCloseBottomTapped:(ZNSFloatingView *)view {', 1)[1].split('- (void)closeWindow:', 1)[0]
-assert 'if(ZNSExitShatterPresent(view)) { [self finishCloseWindow:view fullscreen:NO]; return; }' in entry
+assert 'ZNSDispatchExit(&context,ZNSWindowExitOps,ZNSSelectedExitStyle,UIAccessibilityIsReduceMotionEnabled())' in entry
+assert 'style==ZNSExitShatter?ZNSExitShatterPresent(view):ZNSExitAnimationPresent(view,style)' in manager
+assert '[c->manager finishCloseWindow:c->view fullscreen:NO]' in manager
 assert 'current.interactionGeneration==generation' in entry
 helper = (ROOT / 'Sources/ZNSExitShatter.m').read_text()
 for forbidden in ['afterScreenUpdates:YES', 'renderInContext:', 'drawViewHierarchyInRect:',

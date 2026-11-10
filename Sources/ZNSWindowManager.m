@@ -1,5 +1,6 @@
 #import "ZNSWindowManager.h"
 #import "ZNSExitShatter.h"
+#import "ZNSWindowOpening.h"
 #import "ZNSAuthorization.h"
 #import "ZNSActivationHooks.h"
 #import "ZNSSceneSession.h"
@@ -15,6 +16,8 @@
 static BOOL ZNSDipEnabled=NO;
 static BOOL ZNSFollowDeviceRotation=NO;
 static BOOL ZNSShowWindowBars=YES;
+static ZNSExitStyle ZNSSelectedExitStyle=ZNSExitShatter;
+static ZNSEntryStyle ZNSSelectedEntryStyle=ZNSEntrySoft;
 #import "ZNSIconSwipeRecognizer.h"
 #import "ZNSLayerInput.h"
 #import <objc/runtime.h>
@@ -280,6 +283,7 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 @property(nonatomic,strong) NSArray<UIView *> *corners;
 @property(nonatomic,copy) void (^closeAction)(BOOL fullscreen);
 @property(nonatomic,copy) void (^znsBottomExitAction)(void);
+@property(nonatomic,copy) void (^znsNewHostReadyCompletion)(BOOL);
 @property(nonatomic,copy) CGRect (^safeBounds)(void);
 @property(nonatomic,copy) CGRect (^mainSafeBounds)(void);
 @property(nonatomic) BOOL docked;
@@ -421,6 +425,8 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 - (BOOL)activateWindow:(ZNSFloatingView *)view;
 - (void)closeWindow:(ZNSFloatingView *)view fullscreen:(BOOL)fullscreen;
 - (void)znsCloseBottomTapped:(ZNSFloatingView *)view;
+- (void)znsFadeBottomExit:(ZNSFloatingView *)view;
+- (void)animateOpening:(ZNSFloatingView *)view;
 - (void)finishCloseWindow:(ZNSFloatingView *)view fullscreen:(BOOL)fullscreen;
 @property(nonatomic,strong) UIButton *outsideButton;
 @property(nonatomic,strong) UIView *keyboardDismissShield;
@@ -821,6 +827,9 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
         self.activationReadyCompletion=nil;
         if (self.presentationChanged) self.presentationChanged();
         if (readyCompletion) readyCompletion(success);
+        void (^opening)(BOOL)=self.znsNewHostReadyCompletion;
+        self.znsNewHostReadyCompletion=nil;
+        if(opening) opening(success);
     }];
 }
 - (void)attachHost {
@@ -1235,6 +1244,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     return YES;
 }
 - (void)cancelInteraction {
+    self.znsNewHostReadyCompletion=nil; ZNSWindowOpeningCancel(self);
     [self restorePortraitKeyboardWithDuration:0 options:0];
     [self stopSqueezeFeedback];
     ++self.interactionGeneration;
@@ -2066,6 +2076,21 @@ static NSUInteger ZNSPreferenceReads;
 static NSUInteger ZNSTouchCandidates;
 static NSUInteger ZNSTouchAccepted;
 static NSUInteger ZNSRecognizedSwipes;
+typedef struct {
+    __unsafe_unretained ZNSWindowManager *manager;
+    __unsafe_unretained ZNSFloatingView *view;
+} ZNSWindowExitContext;
+static bool ZNSWindowExitPresentOp(void *p,ZNSExitStyle style) {
+    ZNSFloatingView *view=((ZNSWindowExitContext *)p)->view;
+    return style==ZNSExitShatter?ZNSExitShatterPresent(view):ZNSExitAnimationPresent(view,style);
+}
+static void ZNSWindowExitCloseOp(void *p) {
+    ZNSWindowExitContext *c=p;[c->manager finishCloseWindow:c->view fullscreen:NO];
+}
+static void ZNSWindowExitFallbackOp(void *p) {
+    ZNSWindowExitContext *c=p;[c->manager znsFadeBottomExit:c->view];
+}
+static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWindowExitCloseOp,ZNSWindowExitFallbackOp};
 @implementation ZNSWindowManager
 - (CGRect)dipFrameForWindow:(ZNSFloatingView *)view index:(NSUInteger)index count:(NSUInteger)count {
     CGRect safe=[self mainAvailableFrame],screen=self.controller.view.bounds;
@@ -3025,6 +3050,10 @@ static NSUInteger ZNSRecognizedSwipes;
     id excluded=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("ExcludedApps"),CFSTR(APELIN_PACKAGE_ID)));
     id limit=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("MaxParkedApps"),CFSTR(APELIN_PACKAGE_ID)));
     id follow=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("FollowDeviceRotation"),CFSTR(APELIN_PACKAGE_ID)));
+    id exitStyle=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("WindowExitAnimation"),CFSTR(APELIN_PACKAGE_ID)));
+    id entryStyle=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("WindowEntryAnimation"),CFSTR(APELIN_PACKAGE_ID)));
+    ZNSSelectedExitStyle=ZNSParseExitStyle([exitStyle isKindOfClass:NSString.class]?[exitStyle UTF8String]:NULL);
+    ZNSSelectedEntryStyle=ZNSParseEntryStyle([entryStyle isKindOfClass:NSString.class]?[entryStyle UTF8String]:NULL);
     id showBars=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("ShowWindowBars"),CFSTR(APELIN_PACKAGE_ID)));
     ZNSShowWindowBars=[showBars respondsToSelector:@selector(boolValue)]?[showBars boolValue]:YES;
     id dip=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("DipEnabled"),CFSTR(APELIN_PACKAGE_ID)));
@@ -3059,7 +3088,7 @@ static NSUInteger ZNSRecognizedSwipes;
         [view setNeedsLayout];
     }
     if (!authorized) [self closeForLock]; // Immediately release all hosts, including closing/connecting ones.
-    else if (!self.enabled) { ZNSExitShatterCancelAll(); [self close:NO]; }
+    else if (!self.enabled) { ZNSExitShatterCancelAll(); ZNSWindowOpeningCancelAll(); [self close:NO]; }
     else for (ZNSFloatingView *view in [self.windows copy])
         if ([set containsObject:view.session.bundleIdentifier]) [self closeWindow:view fullscreen:NO];
     if(!self.dipExtractionEnabled) [self disableDipExtractionWhenReady];
@@ -3437,6 +3466,7 @@ static NSUInteger ZNSRecognizedSwipes;
         @try { image=((id(*)(id,SEL,id,NSInteger,CGFloat))objc_msgSend)(UIImage.class,iconSelector,bundle,0,UIScreen.mainScreen.scale); }
         @catch (NSException *exception) { os_log_error(ZNSLog(),"icon unavailable: %{public}@",exception.name); }
     }
+    ZNSExitShatterCancelAll(); // A new lifetime must not be covered by an old frozen exit.
     ZNSFloatingView *view=[[ZNSFloatingView alloc] initWithFrame:frame bundle:bundle icon:image];
     BOOL prepared=[self.preparedSwitcherSession.bundleIdentifier isEqualToString:bundle] && self.preparedSwitcherSession.hostView!=nil;
     if (prepared) view.session=self.preparedSwitcherSession;
@@ -3462,6 +3492,15 @@ static NSUInteger ZNSRecognizedSwipes;
     view.pullDip=^BOOL{ return [weakSelf pullDippedWindow:weakView]; };
     view.closeAction=^(BOOL fullscreen){ [weakSelf closeWindow:weakView fullscreen:fullscreen]; };
     view.znsBottomExitAction=^{ [weakSelf znsCloseBottomTapped:weakView]; };
+    // Assigned only to a newly allocated floating view, not to restore/attachHost.
+    // A successful host attachment is an opportunity, never a remote pixel fence.
+    view.znsNewHostReadyCompletion=^(BOOL success) {
+        ZNSWindowManager *manager=weakSelf; ZNSFloatingView *current=weakView;
+        if(!manager || !current || ![manager.windows containsObject:current]) return;
+        if(success && !notificationParked && manager.enabled && !current.closing &&
+           !current.thumbnail && !current.docked && !current.dipped) [manager animateOpening:current];
+        else ZNSWindowOpeningReady(current,ZNSSelectedEntryStyle,NO,NO);
+    };
     view.willActivate=^{ return [weakSelf activateWindow:weakView]; };
     view.presentationChanged=^{ [weakSelf presentationChanged:weakView]; };
     view.requestFront=^{ [weakSelf raiseWindow:weakView]; };
@@ -3486,9 +3525,10 @@ static NSUInteger ZNSRecognizedSwipes;
             }
         } else [self presentationChanged:view];
         ZNSPromoteRecentApp(view.session);
+        void (^opening)(BOOL)=view.znsNewHostReadyCompletion;
+        view.znsNewHostReadyCompletion=nil; if(opening) opening(YES);
     } else [view start];
     [self arrangeParked];
-    if(!notificationParked) [self animateOpening:view];
     os_log(ZNSLog(),"floating scene request accepted");
     return YES;
 }
@@ -3529,6 +3569,7 @@ static NSUInteger ZNSRecognizedSwipes;
 }
 - (void)presentationChanged:(ZNSFloatingView *)view {
     if (!view || ![self.windows containsObject:view]) return;
+    if(view.thumbnail || view.docked || view.dipped) { view.znsNewHostReadyCompletion=nil; ZNSWindowOpeningCancel(view); }
     if(view.dipped) {
         [self.parkedOrder removeObject:view];
         if(self.floating==view) self.floating=nil;
@@ -3915,24 +3956,19 @@ static NSUInteger ZNSRecognizedSwipes;
 }
 - (void)animateOpening:(ZNSFloatingView *)view {
     [view restartBarHints];
-    if(UIAccessibilityIsReduceMotionEnabled()) return;
-    CGPoint notch=[self notchPoint];
-    CATransform3D source=CATransform3DMakeTranslation(notch.x-view.center.x,notch.y-view.center.y,0);
-    source=CATransform3DScale(source,0.04,0.006,1);
-    CABasicAnimation *expand=[CABasicAnimation animationWithKeyPath:@"transform"];
-    expand.fromValue=[NSValue valueWithCATransform3D:source]; expand.toValue=[NSValue valueWithCATransform3D:CATransform3DIdentity];
-    expand.duration=0.42; expand.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
-    [view.layer addAnimation:expand forKey:@"ZNSNotchOpening"];
-    CABasicAnimation *fade=[CABasicAnimation animationWithKeyPath:@"opacity"];
-    fade.fromValue=@0; fade.toValue=@1; fade.duration=0.25;
-    [view.layer addAnimation:fade forKey:@"ZNSNotchFade"];
+    ZNSWindowOpeningReady(view,ZNSSelectedEntryStyle,view.ready && view.session.hostView!=nil,
+                          !view.closing && !view.thumbnail && !view.docked && !view.dipped);
 }
 - (void)znsCloseBottomTapped:(ZNSFloatingView *)view {
     if(!NSThread.isMainThread || !view || view.closing || ![self.windows containsObject:view]) return;
+    view.znsNewHostReadyCompletion=nil; ZNSWindowOpeningCancel(view);
     view.closing=YES; view.userInteractionEnabled=NO;
-    // Only barTapped: calls this path. Snapshot before the existing teardown;
-    // successful animation owns no live view/session and never closes anything.
-    if(ZNSExitShatterPresent(view)) { [self finishCloseWindow:view fullscreen:NO]; return; }
+    ZNSWindowExitContext context={self,view};
+    // The tested production dispatcher performs immediate close on none/success;
+    // only capture refusal uses the owner/generation-bound native fade below.
+    ZNSDispatchExit(&context,ZNSWindowExitOps,ZNSSelectedExitStyle,UIAccessibilityIsReduceMotionEnabled());
+}
+- (void)znsFadeBottomExit:(ZNSFloatingView *)view {
     // Capture refusal/exception: no retry, redraw, screenshot service or wait.
     // Fade the local view briefly; the normal teardown remains authoritative.
     NSUInteger generation=++view.interactionGeneration;
@@ -3951,6 +3987,7 @@ static NSUInteger ZNSRecognizedSwipes;
 }
 - (void)closeWindow:(ZNSFloatingView *)view fullscreen:(BOOL)fullscreen {
     if (!view || view.closing || ![self.windows containsObject:view]) return;
+    view.znsNewHostReadyCompletion=nil; ZNSWindowOpeningCancel(view);
     if(view==self.dipExtractedWindow) [self clearDipExtraction];
     if(fullscreen || UIAccessibilityIsReduceMotionEnabled()) { [self finishCloseWindow:view fullscreen:fullscreen]; return; }
     view.closing=YES; ++view.interactionGeneration; ++view.toolsGeneration;
@@ -3976,6 +4013,7 @@ static NSUInteger ZNSRecognizedSwipes;
 - (void)finishCloseWindow:(ZNSFloatingView *)view fullscreen:(BOOL)fullscreen {
     if (!view || ![self.windows containsObject:view]) return;
     if(view==self.dipExtractedWindow) [self clearDipExtraction];
+    view.znsNewHostReadyCompletion=nil; ZNSWindowOpeningCancel(view);
     NSString *bundle=view.session.bundleIdentifier;
     BOOL expandedFullscreen=fullscreen && view.fullscreenExpanding;
     view.closing=YES; ++view.interactionGeneration; ++view.toolsGeneration;
@@ -4048,7 +4086,7 @@ static NSUInteger ZNSRecognizedSwipes;
         dispatch_async(dispatch_get_main_queue(),^{ [self closeForLock]; });
         return;
     }
-    ZNSExitShatterCancelAll();
+    ZNSExitShatterCancelAll(); ZNSWindowOpeningCancelAll();
     if(self.closingAllWindows) return;
     self.closingAllWindows=YES;
     @try {

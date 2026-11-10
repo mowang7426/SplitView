@@ -189,6 +189,7 @@
 - (NSString *)znsPageIdentifier { return PAGE; } \
 - (void)viewDidLoad { [super viewDidLoad]; self.title=TITLE; } \
 @end
+ZNS_SETTINGS_PAGE(ZNSAnimationsListController, @"animations", @"浮窗动画")
 ZNS_SETTINGS_PAGE(ZNSBasicListController, @"basic", @"主分屏与桌面手势")
 ZNS_SETTINGS_PAGE(ZNSParkedListController, @"parked", @"空挂与旋转")
 ZNS_SETTINGS_PAGE(ZNSDipListController, @"dip", @"分屏的奇特形态")

@@ -23,6 +23,7 @@
     ZNSShatterLifetime znsLife;
     ZNSShatterPolygon znsPolygons[ZNSShatterCount];
 }
+@property(nonatomic) ZNSExitStyle znsStyle;
 @property(nonatomic,weak) UIView *znsSource;
 @property(nonatomic,strong) ZNSExitShatterWindow *znsHost;
 @property(nonatomic,strong) UIView *znsStage;
@@ -38,6 +39,8 @@
 - (void)znsPlay:(BOOL)scatter token:(uint64_t)token;
 - (void)znsDispose;
 - (void)znsCancel;
+- (BOOL)znsBuildReference;
+- (void)znsPlaySelected:(uint64_t)token;
 @end
 static NSMutableSet<ZNSExitShatterPresentation *> *ZNSExitShatterPresentations;
 static BOOL ZNSExitShatterCapturing;
@@ -150,16 +153,25 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.02*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
         ZNSExitShatterPresentation *current=weakSelf;
         if(!current || !current->znsLife.active || current->znsLife.generation!=token) return;
-        @try { ZNSShatterBuild(&current->znsLife,(__bridge void *)current,ZNSExitShatterOps,scatter,token); }
+        @try {
+            if(current.znsStyle==ZNSExitShatter) ZNSShatterBuild(&current->znsLife,(__bridge void *)current,ZNSExitShatterOps,scatter,token);
+            else {
+                if(current.znsStyle==ZNSExitReference && ![current znsBuildReference]) {
+                    [current znsClearShards]; current.znsStyle=ZNSExitFade;
+                }
+                [current znsPlay:NO token:token];
+            }
+        }
         @catch(__unused NSException *exception) {
             // An unexpected crop exception still has a valid frozen root.
-            [current znsClearShards];
+            [current znsClearShards]; current.znsStyle=ZNSExitFade;
             @try { [current znsPlay:NO token:token]; }
             @catch(__unused NSException *fallbackException) { [current znsCancel]; }
         }
     });
 }
 - (void)znsPlay:(BOOL)scatter token:(uint64_t)token {
+    if(self.znsStyle!=ZNSExitShatter) { [self znsPlaySelected:token]; return; }
     self.znsSource=nil; // No retained live view/session in any animation callback.
     // Retain the single frozen provider until disposal, including when its view
     // is detached. Cropped replicas may share its compositor backing store.
@@ -189,6 +201,54 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
         if(current) ZNSShatterFinish(&current->znsLife,(__bridge void *)current,ZNSExitShatterOps,token);
     });
 }
+// Reference-inspired approximation: horizontal frozen bands disappear towards
+// the right with uneven phase. Not a claim of reproducing a private dust shader.
+- (BOOL)znsBuildReference {
+    CGFloat w=self.znsFrozen.bounds.size.width,h=self.znsFrozen.bounds.size.height;
+    for(unsigned i=0;i<ZNSReferenceBands;i++) {
+        CGFloat y=h*i/ZNSReferenceBands, end=h*(i+1)/ZNSReferenceBands;
+        CGRect rect=CGRectMake(0,y,w,end-y);
+        double pixels=self.znsPixelArea;
+        if(!ZNSShatterReservePixels(&pixels,w*(end-y)*self.znsScale*self.znsScale)) return NO;
+        self.znsPixelArea=pixels;
+        UIView *band=[self.znsFrozen resizableSnapshotViewFromRect:rect afterScreenUpdates:NO withCapInsets:UIEdgeInsetsZero];
+        if(!band) return NO;
+        band.frame=rect;band.userInteractionEnabled=NO;
+        [self.znsStage addSubview:band];[self.znsShards addObject:band];
+    }
+    return YES;
+}
+- (void)znsPlaySelected:(uint64_t)token {
+    self.znsSource=nil; self.znsHost.hidden=NO;
+    ZNSMotionPlan p=ZNSExitMotionPlan(self.znsStyle,self.znsFrozen.bounds.size.width,self.znsFrozen.bounds.size.height);
+    if(self.znsStyle==ZNSExitReference) {
+        [self.znsFrozen removeFromSuperview];
+        for(unsigned i=0;i<self.znsShards.count;i++) {
+            UIView *band=self.znsShards[i];
+            [UIView animateWithDuration:p.duration delay:ZNSReferenceDelay(i)
+                options:UIViewAnimationOptionCurveEaseIn|UIViewAnimationOptionAllowUserInteraction animations:^{
+                // Center-based collapse plus translation keeps the vanishing
+                // edge biased right, with a small alternating vertical drift.
+                band.transform=CGAffineTransformMake(p.sx,0,0,1,p.dx*.5,(i%2?1:-1)*8);
+                band.alpha=0;
+            } completion:nil];
+        }
+    } else {
+        if(self.znsFrozen.superview!=self.znsStage) [self.znsStage addSubview:self.znsFrozen];
+        [UIView animateWithDuration:p.duration delay:0 options:UIViewAnimationOptionCurveEaseIn|UIViewAnimationOptionAllowUserInteraction animations:^{
+            CATransform3D t=CATransform3DIdentity;
+            if(p.angle) { t.m34=-1.0/800; t=CATransform3DRotate(t,p.angle,1,0,0); }
+            t=CATransform3DTranslate(t,p.dx,p.dy,0);t=CATransform3DScale(t,p.sx,p.sy,1);
+            self.znsFrozen.layer.transform=t;self.znsFrozen.alpha=0;
+        } completion:nil];
+    }
+    __weak typeof(self) weakSelf=self;
+    double duration=p.duration+(self.znsStyle==ZNSExitReference?.20:0)+.03;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(duration*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        ZNSExitShatterPresentation *current=weakSelf;
+        if(current) ZNSShatterFinish(&current->znsLife,(__bridge void *)current,ZNSExitShatterOps,token);
+    });
+}
 - (void)znsCancel { ZNSShatterFinish(&znsLife,(__bridge void *)self,ZNSExitShatterOps,znsLife.generation); }
 - (void)znsDispose {
     for(id observer in self.znsObservers) [NSNotificationCenter.defaultCenter removeObserver:observer];
@@ -203,18 +263,21 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
 }
 @end
 
-BOOL ZNSExitShatterPresent(UIView *source) {
+BOOL ZNSExitShatterPresent(UIView *source) { return ZNSExitAnimationPresent(source,ZNSExitShatter); }
+BOOL ZNSExitAnimationPresent(UIView *source,ZNSExitStyle style) {
+    style=ZNSResolveExitStyle(style,UIAccessibilityIsReduceMotionEnabled());
+    if(style==ZNSExitNone) return NO;
     if(!NSThread.isMainThread || !source.window || ZNSExitShatterCapturing) return NO;
     // At most one presentation: rapid closing cannot accumulate textures/hosts.
     ZNSExitShatterCancelAll();
     ZNSExitShatterCapturing=YES;
     ZNSExitShatterPresentation *presentation=[ZNSExitShatterPresentation new];
-    presentation.znsSource=source;
+    presentation.znsSource=source; presentation.znsStyle=style;
     if(!ZNSExitShatterPresentations) ZNSExitShatterPresentations=[NSMutableSet new];
     [ZNSExitShatterPresentations addObject:presentation];
     BOOL accepted=NO;
     @try {
-        BOOL scatter=!UIAccessibilityIsReduceMotionEnabled() &&
+        BOOL scatter=style==ZNSExitShatter && !UIAccessibilityIsReduceMotionEnabled() &&
             ZNSShatterGeometry(source.bounds.size.width,source.bounds.size.height,source.window.screen.scale,
                                arc4random(),presentation->znsPolygons);
         accepted=ZNSShatterStart(&presentation->znsLife,(__bridge void *)presentation,ZNSExitShatterOps,scatter);

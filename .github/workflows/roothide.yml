@@ -1,4 +1,4 @@
-name: SplitView RootHide shatter1 build
+name: SplitView RootHide animations1 build
 on:
   workflow_dispatch:
   push:
@@ -50,6 +50,7 @@ jobs:
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
           python3 tools/dark_mode_layout_checks.py | tee build/dark-mode-layout-checks.log
           python3 tools/exit_shatter_checks.py | tee build/exit-shatter-checks.log
+          python3 tools/window_animation_checks.py | tee build/window-animation-checks.log
       - name: Build RootHide package
         run: |
           set -euo pipefail
@@ -58,7 +59,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-shatter1
+          name: splitview-roothide-animations1
           path: |
             packages/*.deb
             build/
