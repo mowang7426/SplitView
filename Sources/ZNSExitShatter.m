@@ -161,7 +161,12 @@ static const ZNSShatterOperations ZNSExitShatterOps={ZNSShatterCaptureOp,ZNSShat
 }
 - (void)znsPlay:(BOOL)scatter token:(uint64_t)token {
     self.znsSource=nil; // No retained live view/session in any animation callback.
-    if(scatter) { [self.znsFrozen removeFromSuperview]; self.znsFrozen=nil; }
+    // Retain the single frozen provider until disposal, including when its view
+    // is detached. Cropped replicas may share its compositor backing store.
+    if(scatter) [self.znsFrozen removeFromSuperview];
+    else if(self.znsFrozen.superview!=self.znsStage) {
+        self.znsFrozen.alpha=1; [self.znsStage addSubview:self.znsFrozen];
+    }
     self.znsHost.hidden=NO; // Never makeKeyAndVisible or change scene geometry.
     __weak typeof(self) weakSelf=self;
     [UIView animateWithDuration:scatter?ZNSShatterDuration:ZNSShatterFadeDuration delay:0

@@ -44,6 +44,10 @@ for forbidden in ['afterScreenUpdates:YES', 'renderInContext:', 'drawViewHierarc
 assert 'resizableSnapshotViewFromRect:rect afterScreenUpdates:NO' in helper
 assert 'self.znsFrozen resizableSnapshotViewFromRect:' in helper
 assert 'source snapshotViewAfterScreenUpdates:NO' in helper
+play_block = helper.split('- (void)znsPlay:(BOOL)scatter token:(uint64_t)token {', 1)[1].split('- (void)znsCancel {', 1)[0]
+assert 'self.znsFrozen=nil' not in play_block
+assert 'self.znsStage addSubview:self.znsFrozen' in play_block
+assert 'self.znsFrozen=nil' in helper.split('- (void)znsDispose {', 1)[1]
 assert 'ZNSShatterSourcePixels(' in helper and 'ZNSShatterReservePixels(' in helper
 assert 'ZNSShatterBuild(&current->znsLife' in helper
 assert 'znsHost.userInteractionEnabled=NO' in helper and 'ZNSSetLayerInputEnabled(self.znsHost.layer,NO)' in helper
