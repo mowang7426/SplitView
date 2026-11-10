@@ -24,7 +24,7 @@ static NSArray *ZNSFineMasks(void) {
         }
         CGDataProviderRef provider=CGDataProviderCreateWithData(NULL,data,bytes,ZNSFineReleaseData);
         if(!provider) { free(data);CGColorSpaceRelease(space);return nil; }
-        CGImageRef image=CGImageCreate(ZNSFineMaskWidth,ZNSFineMaskHeight,8,32,ZNSFineMaskWidth*4,space,kCGImageAlphaPremultipliedLast,provider,NULL,false,kCGRenderingIntentDefault);
+        CGImageRef image=CGImageCreate(ZNSFineMaskWidth,ZNSFineMaskHeight,8,32,ZNSFineMaskWidth*4,space,(CGBitmapInfo)kCGImageAlphaPremultipliedLast,provider,NULL,false,kCGRenderingIntentDefault);
         CGDataProviderRelease(provider);
         if(!image) { CGColorSpaceRelease(space);return nil; }
         [frames addObject:(__bridge id)image];CGImageRelease(image);
