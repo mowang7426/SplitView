@@ -3,8 +3,8 @@ p=pathlib.Path(__file__).resolve().parents[1]
 for f in (p/'Preferences').rglob('*.plist'):
     plistlib.loads(f.read_bytes())
 manifest=json.loads((p/'apelin-project.json').read_text())
-assert manifest['package']['version']=='0.7.66+keyboard11'
-assert 'Version: 0.7.66+keyboard11' in (p/'control').read_text()
+assert manifest['package']['version']=='0.7.66+keyboard11.shatter1'
+assert 'Version: 0.7.66+keyboard11.shatter1' in (p/'control').read_text()
 for name in ['Sources/ZNSAuthorization.h','Sources/ZNSKeyboardFocus.m','Preferences/ZNSRootListController.m','Sources/ZNSKeyboardPolicy.h']:
     original=subprocess.check_output(['git','show','e174b5232a0f7e18ed79c25e3e83481de507b0e7:'+name],cwd=p)
     assert (p/name).read_bytes()==original,name+' unexpectedly changed'

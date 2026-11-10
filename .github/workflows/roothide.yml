@@ -1,4 +1,4 @@
-name: SplitView RootHide keyboard build
+name: SplitView RootHide shatter1 build
 on:
   workflow_dispatch:
   push:
@@ -49,6 +49,7 @@ jobs:
           python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
           python3 tools/dark_mode_layout_checks.py | tee build/dark-mode-layout-checks.log
+          python3 tools/exit_shatter_checks.py | tee build/exit-shatter-checks.log
       - name: Build RootHide package
         run: |
           set -euo pipefail
@@ -57,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-keyboard
+          name: splitview-roothide-shatter1
           path: |
             packages/*.deb
             build/
