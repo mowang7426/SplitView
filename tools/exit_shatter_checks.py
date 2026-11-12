@@ -19,10 +19,11 @@ def run_tests(include, binary):
     return subprocess.run([str(binary)], capture_output=True, text=True, timeout=45)
 
 
-# Preserve exact deep watchdog/keyboard/focus/authorization sources. The manager
-# changes only the explicit bottom-tap dispatch, callback wiring and visual cancel.
+# Preserve exact deep watchdog/focus/authorization sources. Keyboard16 owns the
+# process-wide scene ambiguity gate in ZNSKeyboardClient.m; all other protected
+# sources remain byte-identical to the deep-watchdog baseline.
 for path in sorted((ROOT / 'Sources').iterdir()):
-    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']):
+    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']) and path.name != 'ZNSKeyboardClient.m':
         baseline = subprocess.check_output(['git', 'show', BASE + ':Sources/' + path.name], cwd=ROOT)
         assert path.read_bytes() == baseline, 'baseline source changed: ' + path.name
 manager = (ROOT / 'Sources/ZNSWindowManager.m').read_text()
