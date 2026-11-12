@@ -67,6 +67,14 @@ static void ZNSClientPublishPhase(ZNSClientKeyboardPhase phase) {
         uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
         notify_set_state(ZNSClientPhaseToken,(stamp<<2)|phase);
     }
+    // App-side proof is deliberately numeric and privacy-sanitized; it never
+    // includes responder, bundle, scene address, or keyboard/input content.
+    ZNSKeyboardDiagPhase diag=ZNSKeyboardDiagDidChange;
+    if (phase==ZNSClientKeyboardWillHide) diag=ZNSKeyboardDiagWillHide;
+    else if (phase==ZNSClientKeyboardHidden) diag=ZNSKeyboardDiagDidHide;
+    else if (phase==ZNSClientKeyboardShown) diag=ZNSKeyboardDiagDidShow;
+    ZNSKeyboardDiagEmit(diag, 0, (NSUInteger)stamp,
+                        @{@"visibleProof": phase==ZNSClientKeyboardHidden?@"did_hide":@"uikit_notification"});
 }
 static int ZNSAnimationToken;
 static BOOL ZNSAnimationReady;

@@ -4,6 +4,7 @@
 #import "ZNSPrivate.h"
 #import "ZNSLayerInput.h"
 #import "ZNSKeyboardClient.h"
+#import "ZNSKeyboardDiag.h"
 #import <notify.h>
 #import <unistd.h>
 #import <substrate.h>
@@ -534,6 +535,10 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                 }
                 if (hide && owner.portraitExpansion && owner.clientPID>0 && owner.clientPID==ZNSKeyboardClientPID(owner)) {
                     ZNSClientKeyboardPhase phase=ZNSReadClientKeyboardPhase(owner.clientPID);
+                    ZNSKeyboardDiagDecision(@"restore_authorization", owner.dismissGeneration,
+                        @{@"visibleProof":phase==ZNSClientKeyboardShown?@"client_shown":phase==ZNSClientKeyboardHidden?@"did_hide":@"unknown",
+                          @"ownerMatch":@YES,@"focusMatch":@YES,@"restoreAuth":@(phase==ZNSClientKeyboardWillHide || phase==ZNSClientKeyboardHidden),
+                          @"restoreReason":phase==ZNSClientKeyboardWillHide?@"client_will_hide":phase==ZNSClientKeyboardHidden?@"client_did_hide":@"phase_not_authorized"});
                     if (phase==ZNSClientKeyboardWillHide || phase==ZNSClientKeyboardHidden) {
                         [owner znsAcceptClientPhase:phase]; return;
                     }
