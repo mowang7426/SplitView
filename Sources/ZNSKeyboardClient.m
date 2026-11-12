@@ -64,8 +64,8 @@ static BOOL ZNSClientHasSingleActiveKeyboardScene(void) {
     return active!=nil;
 }
 static void ZNSClientPublishPhase(ZNSClientKeyboardPhase phase) {
+    uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
     if (ZNSClientPhaseReady) {
-        uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
         notify_set_state(ZNSClientPhaseToken,(stamp<<2)|phase);
     }
     // App-side proof is deliberately numeric and privacy-sanitized; it never
