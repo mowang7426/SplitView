@@ -616,7 +616,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     for (NSUInteger i=0;i<3;i++) {
         UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
         button.frame=CGRectMake(30+28*i,0,28,32); button.tag=i;
-        button.accessibilityLabel=labels[i]; button.accessibilityIdentifier=[@"ZNSControl" stringByAppendingFormat:@"%lu",(unsigned long)i];
+        button.accessibilityLabel=labels[i]; button.accessibilityHint=(i==0?@"关闭当前主浮窗；不会将其最小化":(i==1?@"最小化为悬浮图标":@"全屏打开应用")); button.accessibilityIdentifier=[@"ZNSControl" stringByAppendingFormat:@"%lu",(unsigned long)i];
         UIView *dot=[[UIView alloc] initWithFrame:CGRectMake(2,4,24,24)];
         dot.backgroundColor=colors[i]; dot.layer.cornerRadius=12; dot.userInteractionEnabled=NO; [button addSubview:dot];
         UIImageView *glyph=[[UIImageView alloc] initWithFrame:CGRectMake(7,9,14,14)];
@@ -1401,6 +1401,7 @@ static CATransform3D ZNSCornerPushTransform(CGSize size,BOOL right,CGPoint offse
     if(self.closing || self.activeManipulation || self.dismissing || self.rebounding || self.thumbnail || self.docked || self.session.layoutInFlight) return;
     [self expandTools];
     if (sender.tag==1) [self dock];
+    else if (sender.tag==0 && self.znsBottomExitAction) { ZNSActionFeedback(); self.znsBottomExitAction(); }
     else if (self.closeAction) { ZNSActionFeedback(); self.closeAction(sender.tag==2); }
 }
 - (BOOL)parkLiveThumbnail {

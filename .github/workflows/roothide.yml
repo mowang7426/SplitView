@@ -2,7 +2,7 @@ name: SplitView RootHide animations4 build
 on:
   workflow_dispatch:
   push:
-    branches: [feature/portrait-keyboard-expand]
+    branches: [animations4.closebutton1]
 permissions:
   contents: read
 env:
@@ -45,6 +45,7 @@ jobs:
           /tmp/PortraitSceneTests | tee build/PortraitSceneTests.log
           xcrun clang -Wall -Wextra -Werror -fobjc-arc tools/PortraitEventTests.m -framework Foundation -framework CoreGraphics -o /tmp/PortraitEventTests
           /tmp/PortraitEventTests | tee build/PortraitEventTests.log
+          python3 tools/close_button_checks.py | tee build/close-button-checks.log
           python3 tools/portrait_runtime_checks.py | tee build/portrait-runtime-checks.log
           python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
