@@ -440,6 +440,7 @@ static CGSize ZNSCanvasSurfaceSize(UIView *container) {
 - (void)updateOutsideButton;
 @property(nonatomic) BOOL enabled;
 @property(nonatomic,copy) NSString *iconGesture;
+@property(nonatomic) BOOL iconSwipeSplitEnabled;
 @property(nonatomic,strong) NSSet<NSString *> *excluded;
 @property(nonatomic,strong) NSHashTable<UIView *> *iconViews;
 - (void)close:(BOOL)fullscreen;
@@ -3047,6 +3048,7 @@ static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWind
     if(!authorized) ZNSDisableFeatureSwitches();
     id enabled=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("Enabled"),CFSTR(APELIN_PACKAGE_ID)));
     id direction=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("IconGesture"),CFSTR(APELIN_PACKAGE_ID)));
+    id iconSwipeEnabled=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("IconSwipeSplitEnabled"),CFSTR(APELIN_PACKAGE_ID)));
     id excluded=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("ExcludedApps"),CFSTR(APELIN_PACKAGE_ID)));
     id limit=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("MaxParkedApps"),CFSTR(APELIN_PACKAGE_ID)));
     id follow=CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("FollowDeviceRotation"),CFSTR(APELIN_PACKAGE_ID)));
@@ -3076,6 +3078,7 @@ static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWind
     self.maxParkedApps=[limit respondsToSelector:@selector(integerValue)]?MAX(3,MIN(8,[limit integerValue])):8;
     self.enabled=authorized && ([enabled respondsToSelector:@selector(boolValue)]?[enabled boolValue]:NO);
     self.iconGesture=[@[@"up",@"down",@"both"] containsObject:direction]?direction:@"both";
+    self.iconSwipeSplitEnabled=[iconSwipeEnabled respondsToSelector:@selector(boolValue)]?[iconSwipeEnabled boolValue]:YES;
     NSMutableSet *set=[NSMutableSet setWithObjects:@"com.apple.springboard",@"com.apple.PreBoard",@"com.apple.Setup",nil];
     if ([excluded isKindOfClass:NSString.class]) {
         NSCharacterSet *separators=[NSCharacterSet characterSetWithCharactersInString:@",，;；\n \t"];
@@ -3106,7 +3109,7 @@ static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWind
 - (void)configureGestures:(UIView *)view {
     NSArray *gestures=objc_getAssociatedObject(view,&ZNSIconGesturesKey);
     for (ZNSIconSwipeRecognizer *gesture in gestures) {
-        BOOL match=[self.iconGesture isEqualToString:@"both"] || (gesture.direction==UISwipeGestureRecognizerDirectionUp ? [self.iconGesture isEqualToString:@"up"] : [self.iconGesture isEqualToString:@"down"]);
+        BOOL match=self.iconSwipeSplitEnabled && ([self.iconGesture isEqualToString:@"both"] || (gesture.direction==UISwipeGestureRecognizerDirectionUp ? [self.iconGesture isEqualToString:@"up"] : [self.iconGesture isEqualToString:@"down"]));
         if (gesture.enabled!=(self.enabled && match)) gesture.enabled=self.enabled && match;
     }
 }
@@ -3147,7 +3150,7 @@ static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWind
     BOOL excluded=hasBundle && [self.excluded containsObject:bundle];
     BOOL editing=icon && ZNSBool(icon,@"isEditing");
     BOOL locked=ZNSBool(ZNSShared(@"SBLockScreenManager"),@"isUILocked");
-    BOOL allowed=self.enabled && hasBundle && !excluded && !editing && !locked;
+    BOOL allowed=self.enabled && self.iconSwipeSplitEnabled && hasBundle && !excluded && !editing && !locked;
     swipe.sourceIconView=allowed?icon:nil;
     swipe.sourceBundleIdentifier=allowed?bundle:nil;
     ZNSTouchCandidates++; if (allowed) ZNSTouchAccepted++;
@@ -3169,7 +3172,7 @@ static const ZNSExitDispatchOps ZNSWindowExitOps={ZNSWindowExitPresentOp,ZNSWind
     if (gesture.state!=UIGestureRecognizerStateRecognized) return;
     UIView *icon=gesture.sourceIconView;
     NSString *bundle=gesture.sourceBundleIdentifier;
-    if(!self.enabled || !icon.window || !bundle.length || [self.excluded containsObject:bundle] ||
+    if(!self.enabled || !self.iconSwipeSplitEnabled || !icon.window || !bundle.length || [self.excluded containsObject:bundle] ||
        ![[self bundleForIcon:icon] isEqualToString:bundle] || ZNSBool(icon,@"isEditing") ||
        ZNSBool(ZNSShared(@"SBLockScreenManager"),@"isUILocked")) return;
     if(icon!=gesture.view && ![icon isDescendantOfView:gesture.view]) return;
