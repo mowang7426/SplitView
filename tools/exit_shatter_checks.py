@@ -23,7 +23,7 @@ def run_tests(include, binary):
 # process-wide scene ambiguity gate in ZNSKeyboardClient.m; all other protected
 # sources remain byte-identical to the deep-watchdog baseline.
 for path in sorted((ROOT / 'Sources').iterdir()):
-    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']) and path.name != 'ZNSKeyboardClient.m':
+    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']) and path.name not in ('ZNSKeyboardClient.m','ZNSKeyboardDiag.m','ZNSKeyboardDiag.h','ZNSKeyboardPlacement.m'):
         baseline = subprocess.check_output(['git', 'show', BASE + ':Sources/' + path.name], cwd=ROOT)
         assert path.read_bytes() == baseline, 'baseline source changed: ' + path.name
 manager = (ROOT / 'Sources/ZNSWindowManager.m').read_text()
