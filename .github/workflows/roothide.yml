@@ -1,4 +1,4 @@
-name: SplitView RootHide animations4 build
+name: SplitView QQ keyboard16 diagnostics build
 on:
   workflow_dispatch:
   push:
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-animations4
+          name: splitview-roothide-qq-keyboard16-diag1
           path: |
             packages/*.deb
             build/
