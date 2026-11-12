@@ -28,7 +28,7 @@ for path in sorted((ROOT / 'Sources').iterdir()):
 manager = (ROOT / 'Sources/ZNSWindowManager.m').read_text()
 bar = manager.split('- (void)barTapped:', 1)[1].split('- (void)restoreChromeOpacity', 1)[0]
 assert 'gesture.view==self.bottomBar && self.znsBottomExitAction' in bar
-assert manager.count('self.znsBottomExitAction()') == 1
+assert manager.count('self.znsBottomExitAction()') == 2  # bottom bar + explicit toolbar X
 assert manager.count('ZNSExitShatterPresent(view)') == 1
 entry = manager.split('- (void)znsCloseBottomTapped:(ZNSFloatingView *)view {', 1)[1].split('- (void)closeWindow:', 1)[0]
 assert 'ZNSDispatchExit(&context,ZNSWindowExitOps,ZNSSelectedExitStyle,UIAccessibilityIsReduceMotionEnabled())' in entry
