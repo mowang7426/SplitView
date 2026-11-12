@@ -1,4 +1,5 @@
 #import "ZNSKeyboardClient.h"
+#import "ZNSKeyboardDiag.h"
 #import <UIKit/UIKit.h>
 #import <notify.h>
 #import <unistd.h>

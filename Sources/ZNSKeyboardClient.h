@@ -2,7 +2,6 @@
 #import <Foundation/Foundation.h>
 #import <sys/types.h>
 #import <UIKit/UIKit.h>
-#import "ZNSKeyboardDiag.h"
 
 // Current PID state, not the name of a possibly delayed/coalesced Darwin post.
 typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
