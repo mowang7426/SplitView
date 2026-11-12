@@ -1,8 +1,8 @@
-name: SplitView RootHide animations3 build
+name: SplitView RootHide keyboard16 animations4 build
 on:
   workflow_dispatch:
   push:
-    branches: [feature/portrait-keyboard-expand]
+    branches: [fix/qq-keyboard16-20261113]
 permissions:
   contents: read
 env:
@@ -48,6 +48,7 @@ jobs:
           python3 tools/portrait_runtime_checks.py | tee build/portrait-runtime-checks.log
           python3 tools/legacy_geometry_checks.py | tee build/legacy-comparison.log
           python3 tools/keyboard_expand_checks.py | tee build/source-checks.log
+          python3 tools/keyboard16_scene_phase_checks.py | tee build/keyboard16-scene-phase-checks.log
           python3 tools/dark_mode_layout_checks.py | tee build/dark-mode-layout-checks.log
           python3 tools/exit_shatter_checks.py | tee build/exit-shatter-checks.log
           python3 tools/window_animation_checks.py | tee build/window-animation-checks.log
@@ -61,7 +62,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-animations3
+          name: splitview-roothide-keyboard16-animations4
           path: |
             packages/*.deb
             build/

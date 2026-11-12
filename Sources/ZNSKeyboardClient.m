@@ -48,6 +48,20 @@ ZNSClientKeyboardPhase ZNSReadClientKeyboardPhase(pid_t pid) {
     notify_cancel(token);
     return ok?(ZNSClientKeyboardPhase)(word&3):ZNSClientKeyboardUnknown;
 }
+// App-wide keyboard notifications carry no scene identifier. In a multi-scene
+// app they cannot authorize a process-wide hidden phase: another scene may be
+// dismissing its input while QQ's owning scene remains visible. Fail closed on
+// ambiguous scene ownership; native SpringBoard hide handling remains available.
+static BOOL ZNSClientHasSingleActiveKeyboardScene(void) {
+    UIWindowScene *active=nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class] ||
+            scene.activationState==UISceneActivationStateUnattached) continue;
+        if (active) return NO;
+        active=(UIWindowScene *)scene;
+    }
+    return active!=nil;
+}
 static void ZNSClientPublishPhase(ZNSClientKeyboardPhase phase) {
     if (ZNSClientPhaseReady) {
         uint64_t stamp=(uint64_t)(NSProcessInfo.processInfo.systemUptime*1000000);
@@ -304,7 +318,12 @@ void ZNSInstallKeyboardClient(void) {
                 BOOL show=[note.name isEqual:UIKeyboardWillShowNotification] || [note.name isEqual:UIKeyboardDidShowNotification];
                 // Publish phase BEFORE any geometry event. A late shown/geometry
                 // callback must never cancel a newer WillHide transaction.
-                if (hide || show) ZNSClientPublishPhase(willHide?ZNSClientKeyboardWillHide:didHide?ZNSClientKeyboardHidden:ZNSClientKeyboardShown);
+                // These notifications are process-wide, not scene-scoped. A
+                // multi-scene app's hide event is ambiguous and must not clear
+                // the owning scene's visible latch. Geometry still independently
+                // requires a unique responder and matching full-scene canvas.
+                if ((hide || show) && ZNSClientHasSingleActiveKeyboardScene())
+                    ZNSClientPublishPhase(willHide?ZNSClientKeyboardWillHide:didHide?ZNSClientKeyboardHidden:ZNSClientKeyboardShown);
                 // WillHide carries the only transition timing shared by UIKit,
                 // but is not disappearance. Keep the last valid geometry/live
                 // responder through that transaction; clearing it here made the
