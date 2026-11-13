@@ -10,3 +10,6 @@ BOOL ZNSKeyboardDiagEnabled(void);
 void ZNSKeyboardDiagEmit(ZNSKeyboardDiagPhase phase, NSUInteger generation, NSUInteger serial,
                          NSDictionary<NSString *, id> *fields);
 void ZNSKeyboardDiagDecision(NSString *decision, NSUInteger generation, NSDictionary<NSString *, id> *fields);
+NSString *ZNSKeyboardDiagLogPath(void);
+NSString *ZNSKeyboardDiagRead(void);
+BOOL ZNSKeyboardDiagClear(void);

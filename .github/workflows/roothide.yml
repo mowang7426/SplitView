@@ -2,7 +2,7 @@ name: SplitView QQ keyboard16 diagnostics build
 on:
   workflow_dispatch:
   push:
-    branches: [diag/qq-keyboard-state-20261113]
+    branches: [diag/qq-keyboard-state-20261113, diag/qq-keyboard-export-no-mac-20261113]
 permissions:
   contents: read
 env:

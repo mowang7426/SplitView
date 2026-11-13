@@ -3,6 +3,7 @@
 #import <stdlib.h>
 #import <notify.h>
 #import "../Sources/ZNSAuthorization.h"
+#import "../Sources/ZNSKeyboardDiag.h"
 
 // Every functional page shares the same read/write gate, including callbacks
 // from PSListItemsController. Authorization input is never a preference row.
@@ -142,6 +143,26 @@
         } else if(!current) presentResult();
     });
 }
+- (void)znsShowKeyboardDiagnostics {
+    if(!self.view.window) return;
+    UITextView *text=[UITextView new]; text.editable=NO; text.font=[UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular]; text.text=ZNSKeyboardDiagRead(); text.textColor=UIColor.labelColor; text.backgroundColor=UIColor.systemBackgroundColor;
+    UIViewController *viewer=[UIViewController new]; viewer.title=@"QQ键盘诊断日志"; viewer.view.backgroundColor=UIColor.systemBackgroundColor; viewer.view=text;
+    text.translatesAutoresizingMaskIntoConstraints=NO; [NSLayoutConstraint activateConstraints:@[[text.leadingAnchor constraintEqualToAnchor:viewer.view.leadingAnchor constant:12],[text.trailingAnchor constraintEqualToAnchor:viewer.view.trailingAnchor constant:-12],[text.topAnchor constraintEqualToAnchor:viewer.view.topAnchor constant:8],[text.bottomAnchor constraintEqualToAnchor:viewer.view.bottomAnchor constant:-8]]];
+    viewer.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(znsCloseKeyboardDiagnostics)];
+    viewer.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction target:self action:@selector(znsExportKeyboardDiagnostics)],[[UIBarButtonItem alloc] initWithTitle:@"清空" style:UIBarButtonItemStylePlain target:self action:@selector(znsClearKeyboardDiagnostics)]];
+    UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:viewer]; nav.modalPresentationStyle=UIModalPresentationPageSheet; [self presentViewController:nav animated:YES completion:nil];
+}
+- (void)znsCloseKeyboardDiagnostics { [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)znsExportKeyboardDiagnostics {
+    NSString *text=ZNSKeyboardDiagRead(); NSString *name=[NSString stringWithFormat:@"QQ-keyboard-diagnostics-%@.jsonl",[[NSISO8601DateFormatter new] stringFromDate:[NSDate date]]]; name=[name stringByReplacingOccurrencesOfString:@":" withString:@"-"];
+    NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:name]; if(![text writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil]) return;
+    UIActivityViewController *share=[[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:file]] applicationActivities:nil]; share.popoverPresentationController.barButtonItem=((UINavigationController *)self.presentedViewController).visibleViewController.navigationItem.rightBarButtonItems.firstObject; [self.presentedViewController presentViewController:share animated:YES completion:nil];
+}
+- (void)znsClearKeyboardDiagnostics {
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"清空诊断日志？" message:@"仅清除本插件的受限环形日志，不影响系统统一日志。" preferredStyle:UIAlertControllerStyleAlert]; [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf=self; [alert addAction:[UIAlertAction actionWithTitle:@"清空" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){ (void)action; BOOL ok=ZNSKeyboardDiagClear(); [weakSelf znsShowAuthorizationMessage:ok?@"诊断日志已清空。":@"无法清空日志：当前进程没有权限访问共享日志文件。"]; }]]; [self.presentedViewController presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)znsResetAuthorization {
     if(self.presentedViewController || !self.view.window) return;
     [self.view endEditing:YES];
