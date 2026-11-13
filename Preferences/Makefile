@@ -1,7 +1,7 @@
 include ../SplitViewBuild.mk
 include $(THEOS)/makefiles/common.mk
 BUNDLE_NAME = ZNSPreferences
-ZNSPreferences_FILES = ZNSRootListController.m
+ZNSPreferences_FILES = ZNSRootListController.m ../Sources/ZNSKeyboardDiag.m
 # The imported Apelin source relied on a prefix header for PSSpecifier.
 ZNSPreferences_CFLAGS = -include Preferences/PSSpecifier.h
 ZNSPreferences_FRAMEWORKS = Foundation UIKit CoreGraphics QuartzCore
