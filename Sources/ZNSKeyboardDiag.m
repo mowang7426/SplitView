@@ -5,6 +5,8 @@
 #import <fcntl.h>
 #import <sys/file.h>
 #import <sys/stat.h>
+#import <pwd.h>
+#import <grp.h>
 #import <math.h>
 
 #define ZNS_DIAG_PATH @"/var/mobile/Library/Logs/com.zengniu.splitview-keyboard.jsonl"
@@ -48,7 +50,7 @@ static void ZNSDiagAppend(NSDictionary *record) {
         if(flock(fd,LOCK_EX)==0) {
             struct stat st; if(fstat(fd,&st)==0) {
                 NSMutableData *data=[NSMutableData dataWithContentsOfFile:ZNS_DIAG_PATH];
-                NSArray *lines=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].componentsSeparatedByString:@"\n";
+                NSArray *lines=[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] componentsSeparatedByString:@"\n"];
                 if(data.length>(NSUInteger)ZNS_DIAG_LIMIT || lines.count>1501) {
                     NSArray *kept=lines.count>1501?[lines subarrayWithRange:NSMakeRange(lines.count-1501,1500)]:lines;
                     data=[[[kept componentsJoinedByString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding] mutableCopy];
