@@ -5,6 +5,7 @@
 #import "ZNSProcessKeepAlive.h"
 #import "ZNSKeyboardFocus.h"
 #import "ZNSKeyboardPlacement.h"
+#import "ZNSKeyboardDiag.h"
 #import "ZNSKeyboardPolicy.h"
 #import <substrate.h>
 #import <objc/runtime.h>

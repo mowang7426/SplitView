@@ -73,6 +73,7 @@
                     [owner.keyboardPlacement requestPortraitClientGeometry];
                 } else {
                     void (^failed)(void)=owner.temporaryPortraitFailure;
+                    ZNSKeyboardDiagDecision(@"portrait_scene_rollback", generation, @{@"restoreReason":@"apply_ack_mismatch"});
                     [owner restoreTemporaryPortraitCanvas];
                     os_log_error(ZNSLog(),"temporary portrait scene/host acknowledgment rejected; original canvas restored");
                     if (failed) failed();
@@ -99,6 +100,7 @@
                 return;
             }
             void (^failed)(void)=owner.temporaryPortraitFailure;
+            ZNSKeyboardDiagDecision(@"portrait_scene_rollback", generation, @{@"restoreReason":@"apply_timeout_mismatch"});
             [owner restoreTemporaryPortraitCanvas];
             os_log_error(ZNSLog(),"temporary portrait scene acknowledgment timed out with mismatched state; original canvas restored");
             if (failed) failed();

@@ -78,7 +78,6 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 @property(nonatomic) CGRect portraitKeyboardFrame;
 @property(nonatomic) CFTimeInterval portraitCanvasTransitionUntil;
 @property(nonatomic) BOOL presentationTimingKnown;
-+ (NSDictionary *)portraitPresentation;
 @property(nonatomic) BOOL portraitExternal;
 @property(nonatomic) BOOL landscapeExternal;
 @property(nonatomic) BOOL landscapeMove;
@@ -137,6 +136,7 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 - (BOOL)mixedOrientationFloating;
 - (BOOL)keyboardMovable;
 - (void)rejectExternal:(NSString *)reason;
++ (NSDictionary *)znsPortraitPresentationWithOwner:(ZNSKeyboardPlacement *__autoreleasing *)placement;
 - (BOOL)znsPortraitPresentationEligible;
 - (BOOL)znsPortraitKeyboardContinuity;
 - (void)znsBeginPortraitGeometryRefresh;
@@ -150,11 +150,11 @@ NSNotificationName const ZNSExternalKeyboardVisibilityDidChangeNotification=@"ZN
 @end
 
 static NSDictionary *ZNSPortraitRestoreTiming;
+static __weak ZNSKeyboardPlacement *ZNSPortraitTimingOwner;
+static __weak id ZNSPortraitTimingScene;
 static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner);
 static BOOL ZNSKeyboardMatchesFocus(ZNSKeyboardPlacement *owner);
 #include "ZNSPortraitVisualEvent.inc"
-// Weak: a removed/replaced placement must never keep a floating scene alive.
-static __weak ZNSKeyboardPlacement *ZNSLastPortraitPresentationOwner;
 #include "ZNSPortraitVisibilityEvent.inc"
 static void ZNSPublishKeyboardVisibility(void) {
     // Coalesce restore/re-attach during one UIKit layout; do not re-enter the
@@ -169,20 +169,27 @@ static void ZNSPublishKeyboardVisibility(void) {
       dispatch_async(dispatch_get_main_queue(),^{
         queued=NO;
         static NSDictionary *lastPresentation;
-        NSDictionary *presentation=[ZNSKeyboardPlacement portraitPresentation];
+        static __weak ZNSKeyboardPlacement *lastOwner;
+        static __weak id lastScene;
+        ZNSKeyboardPlacement *currentOwner=nil;
+        NSDictionary *presentation=[ZNSKeyboardPlacement znsPortraitPresentationWithOwner:&currentOwner];
         // Retry unchanged presentations when manager readiness/layoutInFlight
         // changes. The floating-view method is idempotent: no repeated animation.
         static BOOL lastEnded;
-        ZNSKeyboardPlacement *previous=ZNSLastPortraitPresentationOwner;
+        ZNSKeyboardPlacement *previous=lastScene && lastOwner.scene==lastScene?lastOwner:nil;
         BOOL continuity=!presentation && lastPresentation && previous &&
             [previous.bundleIdentifier isEqual:lastPresentation[@"bundle"]] &&
             [previous znsPortraitKeyboardContinuity];
-        BOOL ended=!presentation && !continuity && [ZNSPortraitRestoreTiming[@"ended"] boolValue];
+        ZNSKeyboardPlacement *timingOwner=ZNSPortraitTimingOwner;
+        BOOL timingMatches=timingOwner && ZNSPortraitTimingScene && timingOwner.scene==ZNSPortraitTimingScene &&
+            (!lastPresentation || timingOwner==previous);
+        NSDictionary *timing=timingMatches?ZNSPortraitRestoreTiming:nil;
+        BOOL ended=!presentation && !continuity && [timing[@"ended"] boolValue];
         if (presentation || lastPresentation || (ended && !lastEnded)) {
             // An absent candidate is not DidHide: the host/window or the
             // converted frame can disappear while the App still reports shown.
             NSDictionary *event=ZNSPortraitVisibilityEvent(presentation,lastPresentation,
-                ZNSPortraitRestoreTiming,continuity);
+                timing,continuity);
             static CFTimeInterval lastUnknownDiagnostic;
             if (continuity && CACurrentMediaTime()-lastUnknownDiagnostic>2) {
                 lastUnknownDiagnostic=CACurrentMediaTime();
@@ -190,8 +197,13 @@ static void ZNSPublishKeyboardVisibility(void) {
             }
             // Retain proof across multiple nil samples until a credible end;
             // otherwise a second remount event could use stale hide timing.
-            if (!continuity) lastPresentation=presentation;
-            [NSNotificationCenter.defaultCenter postNotificationName:ZNSPortraitKeyboardGeometryDidChangeNotification object:nil userInfo:event];
+            if (!continuity) {
+                lastPresentation=presentation;
+                lastOwner=currentOwner;
+                lastScene=currentOwner.scene;
+            }
+            [NSNotificationCenter.defaultCenter postNotificationName:ZNSPortraitKeyboardGeometryDidChangeNotification
+                object:(currentOwner ?: previous ?: (timingMatches ? timingOwner : nil)) userInfo:event];
         }
         lastEnded=ended;
         NSString *bundle=[ZNSKeyboardPlacement visibleExternalKeyboardBundleIdentifier];
@@ -446,7 +458,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     return 0;
 }
 @implementation ZNSKeyboardPlacement
-+ (NSDictionary *)portraitPresentation {
++ (NSDictionary *)znsPortraitPresentationWithOwner:(ZNSKeyboardPlacement *__autoreleasing *)placement {
     ZNSKeyboardPlacement *found=nil;
     for (ZNSKeyboardPlacement *owner in ZNSKeyboardOwners.allObjects) {
         if (![owner znsPortraitPresentationEligible]) continue;
@@ -455,7 +467,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
     }
     if (!found) return nil;
     NSValue *frame=[NSValue valueWithCGRect:found.portraitKeyboardFrame];
-    ZNSLastPortraitPresentationOwner=found;
+    if (placement) *placement=found;
     return @{@"bundle":found.bundleIdentifier, @"frame":frame, @"window":found.host.window,
         @"continuity":@([found znsPortraitKeyboardContinuity]),
         @"duration":@(found.presentationTimingKnown?found.presentationDuration:0.25),
@@ -562,6 +574,8 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) {
                         [owner schedule]; return;
                     }
                     // Bridge unavailable only after focus/input actually ended.
+                    ZNSKeyboardDiagDecision(@"portrait_native_did_hide", owner.dismissGeneration,
+                        @{@"restoreReason":@"native_no_input_proof", @"focusMatch":@YES});
                     [owner znsClientDidHide]; [owner schedule]; return;
                 }
                 if (owner.dismissPending) {

@@ -10,6 +10,9 @@ static void ZNSEnqueue(void (^block)(void),BOOL timeout) {
     [(timeout?ZNSDeadlines:ZNSReady) addObject:[block copy]];
 }
 #define dispatch_async(queue,block) ZNSEnqueue(block,NO)
+static void ZNSKeyboardDiagDecision(NSString *decision, NSUInteger generation, NSDictionary *fields) {
+    (void)decision; (void)generation; (void)fields;
+}
 #define dispatch_after(when,queue,block) ZNSEnqueue(block,YES)
 #define os_log_error(...) do {} while(0)
 #define os_log(...) do {} while(0)

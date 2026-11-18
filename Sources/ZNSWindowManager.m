@@ -11,6 +11,7 @@
 #import "ZNSDipGeometry.h"
 #import "ZNSDipIconView.h"
 #import "ZNSKeyboardPlacement.h"
+#import "ZNSKeyboardDiag.h"
 #import "ZNSPortraitKeyboardGeometry.h"
 
 static BOOL ZNSDipEnabled=NO;

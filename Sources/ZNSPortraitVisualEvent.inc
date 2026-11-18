@@ -16,6 +16,8 @@ static void ZNSPublishPortraitVisualWillHideAsync(ZNSKeyboardPlacement *placemen
             ![owner.bundleIdentifier isEqualToString:bundle]) return;
         NSDictionary *event=@{ @"hiding":@(hiding), @"bundle":bundle, @"pid":@(pid),
             @"generation":@(generation), @"duration":@(duration), @"options":@(options) };
+        ZNSKeyboardDiagDecision(@"portrait_visual", generation,
+            @{@"restoreReason":hiding?@"client_will_hide":@"client_show_reversal", @"focusMatch":@YES});
         [NSNotificationCenter.defaultCenter postNotificationName:ZNSPortraitKeyboardWillHideVisualNotification
             object:owner userInfo:event];
     });

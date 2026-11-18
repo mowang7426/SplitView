@@ -68,6 +68,8 @@ int main(void) { @autoreleasepool {
             ('window-enumeration-reentry','ZNSPortraitManager.inc','for (ZNSFloatingView *view in [self.windows copy])','for (ZNSFloatingView *view in self.windows)'),
             ('animation-restart','ZNSPortraitFloating.inc','if (self.portraitKeyboardExpanded && CGRectEqualToRect(frame,self.portraitKeyboardTarget)) return;','/* faulty repeated animation */')]
     faults += [
+        ('native-visible-continuity-ignored','ZNSPortraitPlacement.inc','        [self externalKeyboardVisible];','        NO;'),
+        ('geometry-accepts-wrong-placement','ZNSPortraitManager.inc','owner && notification.object==owner.session.keyboardPlacement &&','owner &&'),
         ('restore-early-clear','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && [self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest]) {','if (sceneMatches) {'),
         ('restore-intermediate-host-layout','ZNSPortraitRestoreTransaction.inc','        self.znsPortraitRestoreCompletion=completion;','        self.znsPortraitRestoreCompletion=completion;\n        ZNSConfigureHostCanvas(self.hostView,[desired frame].size,UIInterfaceOrientationPortrait);'),
         ('visual-missing-willhide','ZNSPortraitPlacement.inc','    ZNSPublishPortraitVisualWillHideAsync(self,generation,pid,bundle,duration,options,YES);','    if (NO) ZNSPublishPortraitVisualWillHideAsync(self,generation,pid,bundle,duration,options,YES);'),

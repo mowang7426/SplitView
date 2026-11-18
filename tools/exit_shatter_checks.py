@@ -20,12 +20,20 @@ def run_tests(include, binary):
 
 
 # Preserve exact deep watchdog/focus/authorization sources. Keyboard16 owns the
-# process-wide scene ambiguity gate in ZNSKeyboardClient.m; all other protected
-# sources remain byte-identical to the deep-watchdog baseline.
+# process-wide scene ambiguity gate. The keyboard repair also explicitly owns
+# the portrait event/scene paths below. Keep all other protected sources pinned.
+KEYBOARD_BRANCH_FILES = {
+    'ZNSKeyboardClient.m', 'ZNSKeyboardDiag.m', 'ZNSKeyboardDiag.h', 'ZNSKeyboardPlacement.m',
+    'ZNSKeyboardRestore.inc', 'ZNSPortraitManager.inc', 'ZNSPortraitPlacement.inc',
+    'ZNSPortraitVisibilityEvent.inc', 'ZNSPortraitVisualEvent.inc', 'ZNSPortraitScene.inc', 'ZNSSceneSession.m',
+}
 for path in sorted((ROOT / 'Sources').iterdir()):
-    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']) and path.name not in ('ZNSKeyboardClient.m','ZNSKeyboardDiag.m','ZNSKeyboardDiag.h','ZNSKeyboardPlacement.m'):
+    if any(key in path.name for key in ['Keyboard', 'Portrait', 'Authorization', 'LandscapeIconGrid', 'SceneSession']) and path.name not in KEYBOARD_BRANCH_FILES:
         baseline = subprocess.check_output(['git', 'show', BASE + ':Sources/' + path.name], cwd=ROOT)
         assert path.read_bytes() == baseline, 'baseline source changed: ' + path.name
+scene_path = ROOT / 'Sources/ZNSSceneSession.m'
+scene_baseline = subprocess.check_output(['git', 'show', BASE + ':Sources/' + scene_path.name], cwd=ROOT)
+assert scene_path.read_bytes().replace(b'#import "ZNSKeyboardDiag.h"\n', b'') == scene_baseline
 manager = (ROOT / 'Sources/ZNSWindowManager.m').read_text()
 bar = manager.split('- (void)barTapped:', 1)[1].split('- (void)restoreChromeOpacity', 1)[0]
 assert 'gesture.view==self.bottomBar && self.znsBottomExitAction' in bar
@@ -55,7 +63,7 @@ assert 'ZNSShatterSourcePixels(' in helper and 'ZNSShatterReservePixels(' in hel
 assert 'ZNSShatterBuild(&current->znsLife' in helper
 assert 'znsHost.userInteractionEnabled=NO' in helper and 'ZNSSetLayerInputEnabled(self.znsHost.layer,NO)' in helper
 assert 'hitTest:' in helper and 'return nil;' in helper
-print('PASS integration guards: bottom-tap only, unchanged deep watchdog/keyboard/focus/auth sources, frozen-only crops, independent non-key/pass-through host, no redraw/readback/disk/sync wait/process kill', flush=True)
+print('PASS integration guards: bottom-tap only, unchanged protected watchdog/focus/auth sources, frozen-only crops, independent non-key/pass-through host, no redraw/readback/disk/sync wait/process kill', flush=True)
 
 mutations = [
     ('stale-end-generation', 'ZNSExitShatterGeometry.h',

@@ -34,12 +34,14 @@ static NSString *ZNSDiagSafe(id value) {
     if ([s rangeOfCharacterFromSet:allowed.invertedSet].location!=NSNotFound) return @"invalid";
     return s.length?s:@"unknown";
 }
-static BOOL ZNSDiagAllow(void) {
+static BOOL ZNSDiagAllow(NSString *key) {
     static NSMutableDictionary *last; static dispatch_once_t once;
     dispatch_once(&once,^{last=[NSMutableDictionary new];});
-    NSString *key=[NSString stringWithFormat:@"%d",getpid()]; NSTimeInterval now=NSProcessInfo.processInfo.systemUptime;
-    NSNumber *previous=last[key]; if(previous && now-previous.doubleValue<0.12) return NO;
-    last[key]=@(now); return YES;
+    NSTimeInterval now=NSProcessInfo.processInfo.systemUptime;
+    @synchronized(last) {
+        NSNumber *previous=last[key]; if(previous && now-previous.doubleValue<0.12) return NO;
+        last[key]=@(now); return YES;
+    }
 }
 static void ZNSDiagAppend(NSDictionary *record) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
@@ -67,7 +69,7 @@ static void ZNSDiagAppend(NSDictionary *record) {
 }
 void ZNSKeyboardDiagEmit(ZNSKeyboardDiagPhase phase, NSUInteger generation, NSUInteger serial, NSDictionary *fields) {
     static NSString *names[]={@"",@"WillShow",@"DidShow",@"WillChange",@"DidChange",@"WillHide",@"DidHide"};
-    if(phase<1 || phase>6 || !ZNSKeyboardDiagEnabled() || !ZNSDiagAllow()) return;
+    if(phase<1 || phase>6 || !ZNSKeyboardDiagEnabled() || !ZNSDiagAllow(@"client_phase")) return;
     NSArray *allowed=@[@"visibleProof",@"ownerMatch",@"focusMatch",@"sceneCount",@"activeSceneCount",@"sceneMatch",@"windowMatch",@"canvasMatch",@"frameInScreen",@"placementVisible",@"expanded",@"restoreAuth",@"restoreReason",@"pollAttempt",@"ack",@"sceneApplied",@"handoff",@"layoutEpoch",@"swipe",@"animation"];
     NSMutableDictionary *safe=[@{@"event":names[phase],@"generation":@(generation),@"serial":@(serial),@"pid":@(getpid()),@"time":@([[NSDate date] timeIntervalSince1970])} mutableCopy];
     for(NSString *key in allowed) if(fields[key]) safe[key]=ZNSDiagSafe(fields[key]);
@@ -76,7 +78,7 @@ void ZNSKeyboardDiagEmit(ZNSKeyboardDiagPhase phase, NSUInteger generation, NSUI
 }
 void ZNSKeyboardDiagDecision(NSString *decision, NSUInteger generation, NSDictionary *fields) {
     NSString *safeEvent=[NSString stringWithFormat:@"Decision_%@",ZNSDiagSafe(decision)];
-    if(!ZNSKeyboardDiagEnabled() || !ZNSDiagAllow()) return;
+    if(!ZNSKeyboardDiagEnabled() || !ZNSDiagAllow(safeEvent)) return;
     NSMutableDictionary *record=[@{@"event":safeEvent,@"generation":@(generation),@"pid":@(getpid()),@"time":@([[NSDate date] timeIntervalSince1970])} mutableCopy];
     NSArray *allowed=@[@"visibleProof",@"ownerMatch",@"focusMatch",@"sceneCount",@"activeSceneCount",@"sceneMatch",@"windowMatch",@"canvasMatch",@"frameInScreen",@"placementVisible",@"expanded",@"restoreAuth",@"restoreReason",@"pollAttempt",@"ack",@"sceneApplied",@"handoff",@"layoutEpoch",@"swipe",@"animation"];
     for(NSString *key in allowed) if(fields[key]) record[key]=ZNSDiagSafe(fields[key]);

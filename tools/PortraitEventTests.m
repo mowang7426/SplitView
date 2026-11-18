@@ -21,6 +21,9 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
     ZNSClientKeyboardWillHide=2, ZNSClientKeyboardHidden=3
 };
 static NSDictionary *ZNSPortraitRestoreTiming;
+@class ZNSKeyboardPlacement;
+static __weak ZNSKeyboardPlacement *ZNSPortraitTimingOwner;
+static __weak id ZNSPortraitTimingScene;
 static NSUInteger ZNSVisibilityPublications;
 static void ZNSPublishKeyboardVisibility(void) { ZNSVisibilityPublications++; }
 @interface ZNSTestLayer : NSObject
@@ -122,6 +125,7 @@ static BOOL ZNSKeyboardInputPresent(id input) { (void)input; return ZNSInput; }
 static id ZNSKeyboardObject(id object,NSString *key) { (void)key; return object; }
 static id ZNSActiveKeyboardDelegate(void) { return @1; }
 @interface ZNSKeyboardPlacement : ZNSTempKeyboard
+@property(nonatomic,weak) id scene;
 @property(nonatomic) BOOL portraitExpansion,active,suspended,invalidated,keyboardHidden,dismissPending,explicitlyDismissed,mutating,clientVisibilityKnown,clientKeyboardShown,clientKeyboardWillHide,portraitKeyboardVisibleLatch,attached;
 @property(nonatomic) CFTimeInterval portraitCanvasTransitionUntil,hiddenAt;
 @property(nonatomic) CGRect portraitKeyboardFrame,geometryBounds,geometryContent,clientKeyboardRegion,reportedKeyboardFrame;
@@ -247,7 +251,7 @@ static ZNSWindowManager *Manager(ZNSKeyboardPlacement **placement) {
     ZNSKeyboardPlacement *p=[ZNSKeyboardPlacement new]; p.canvas=v.session.canvasSize;
     p.portraitExpansion=YES; p.active=YES; p.attached=YES; p.host=[UIView new]; p.host.window=m.window;
     p.portraitKeyboardFrame=CGRectMake(0,510,390,334); v.session.keyboardPlacement=p;
-    p.bundleIdentifier=v.session.bundleIdentifier; p.clientPID=42;
+    p.bundleIdentifier=v.session.bundleIdentifier; p.clientPID=42; p.scene=v.session.scene;
     v.content.superview=v;
     [NSNotificationCenter.defaultCenter addObserver:m selector:@selector(portraitKeyboardWillHideVisual:)
         name:ZNSPortraitKeyboardWillHideVisualNotification object:p];
@@ -272,7 +276,7 @@ static void Publish(ZNSWindowManager *m,ZNSKeyboardPlacement *p,BOOL ended) {
     NSDictionary *info=ZNSPortraitVisibilityEvent(current,previous,restore,continuity);
     if (current) previousOwner=p;
     if (!continuity) previous=current;
-    [m portraitKeyboardGeometryChanged:[NSNotification notificationWithName:@"test" object:nil userInfo:info]];
+    [m portraitKeyboardGeometryChanged:[NSNotification notificationWithName:@"test" object:p userInfo:info]];
 }
 #include "PortraitVisualTests.inc"
 int main(void) { @autoreleasepool {
@@ -418,6 +422,38 @@ int main(void) { @autoreleasepool {
         n.floating=nil; Publish(n,q,NO);
         assert(!w.portraitKeyboardExpanded && !w.session.temporaryPortraitSettings);
         Ack(w.session); Original(w.session);
+    }
+    // Native-only proof: no client phase/geometry is available. Invalid target
+    // conversion and a missing host window alone must not shrink the owner.
+    for (unsigned end=0; end<7; end++) {
+        m=Manager(&p); v=m.floating; original=v.frame;
+        Publish(m,p,NO); Ack(v.session); p.attached=YES;
+        assert(v.portraitKeyboardExpanded && !p.clientVisibilityKnown);
+        assert([p znsPortraitKeyboardContinuity]);
+        ZNSNow+=2; // beyond the existing remount grace
+        v.superview.bounds=CGRectZero; Publish(m,p,NO);
+        assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,expanded));
+        p.host.window=nil; Publish(m,p,NO); Publish(m,p,NO);
+        assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,expanded));
+        if (end<=1) {
+            p.attached=(end==0); // true hide wins with live or unknown surface
+            [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
+            assert(v.session.znsPortraitRestorePending && v.portraitKeyboardExpanded);
+            ClientLayout(v.session);
+        } else {
+            if (end==2) ZNSFocus=NO;
+            if (end==3) p.suspended=YES;
+            if (end==4) v.closing=YES;
+            if (end==5) p.attached=NO;
+            if (end==6) v.session.keyboardPlacement=[ZNSKeyboardPlacement new];
+            // No hide phase; lifecycle / missing proof / wrong owner cannot
+            // use the hide-specific handoff or keep the old expanded canvas.
+            Publish(m,p,NO);
+            assert(!v.session.znsPortraitRestorePending);
+        }
+        ZNSFocus=YES;
+        assert(!v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,original));
+        Ack(v.session); Original(v.session); Drain(ZNSAnimationEnds);
     }
     // Event was initially rejected by manager layoutInFlight; unchanged next
     // presentation is retried, not lost forever by geometry-only coalescing.

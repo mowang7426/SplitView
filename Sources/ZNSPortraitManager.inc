@@ -21,11 +21,12 @@
     NSTimeInterval duration=[event[@"duration"] doubleValue];
     UIViewAnimationOptions options=[event[@"options"] unsignedIntegerValue];
     ZNSFloatingView *owner=self.floating;
-    BOOL eligible=self.enabled && !self.window.hidden && owner.ready && !owner.hidden &&
+    BOOL ownerMatch=owner && notification.object==owner.session.keyboardPlacement &&
+        [owner.session.bundleIdentifier isEqual:event[@"bundle"]];
+    BOOL eligible=ownerMatch && self.enabled && !self.window.hidden && owner.ready && !owner.hidden &&
         !owner.closing && !owner.docked && !owner.thumbnail && !owner.dipped &&
         !owner.dismissing && !owner.rebounding && !owner.fullscreenExpanding &&
-        !owner.activeManipulation && !owner.session.layoutInFlight && !owner.session.landscape &&
-        [owner.session.bundleIdentifier isEqual:event[@"bundle"]];
+        !owner.activeManipulation && !owner.session.layoutInFlight && !owner.session.landscape;
     CGRect target=CGRectZero;
     UIView *root=owner.superview;
     UIWindow *source=event[@"window"];
@@ -38,27 +39,39 @@
     // Explicit end, close, drag, park, rotation and non-owner still restore.
     BOOL holdUnknown=!eligible && ![event[@"ended"] boolValue] &&
         [event[@"continuity"] boolValue] && owner.portraitKeyboardExpanded &&
-        [owner.session.bundleIdentifier isEqual:event[@"bundle"]] && self.enabled &&
+        ownerMatch && self.enabled &&
         !self.window.hidden && !owner.hidden && !owner.closing && !owner.docked &&
         !owner.thumbnail && !owner.dipped && !owner.dismissing &&
         !owner.rebounding && !owner.fullscreenExpanding &&
         !owner.activeManipulation && !owner.session.landscape;
+    if (!eligible && owner.portraitKeyboardExpanded)
+        ZNSKeyboardDiagDecision(@"portrait_geometry", 0,
+            @{@"restoreReason":holdUnknown?@"hold_live_proof":ownerMatch?@"geometry_fallback":@"no_matching_presentation",
+              @"ownerMatch":@(ownerMatch), @"expanded":@YES, @"windowMatch":@(source!=nil),
+              @"visibleProof":[event[@"continuity"] boolValue]?@"live":@"unproven"});
     // Scene/host callbacks can synchronously remove windows during recovery.
     for (ZNSFloatingView *view in [self.windows copy]) {
         BOOL suppressed=view.portraitKeyboardSuppressed;
         if (view!=owner || (!eligible && !holdUnknown)) {
-            if (view==owner && [event[@"clientHidden"] boolValue] && [event[@"ended"] boolValue] &&
-                [owner.session.bundleIdentifier isEqual:event[@"bundle"]] &&
+            if (view==owner && ownerMatch && [event[@"clientHidden"] boolValue] && [event[@"ended"] boolValue] &&
                 !owner.closing && !owner.dismissing && !owner.activeManipulation &&
                 !owner.docked && !owner.thumbnail && !owner.dipped && !owner.rebounding &&
                 !owner.fullscreenExpanding && !owner.session.landscape && !owner.session.layoutInFlight)
                 [view znsRestorePortraitKeyboardAfterHide];
-            else [view restorePortraitKeyboardWithDuration:duration options:options];
+            else {
+                if (view.portraitKeyboardExpanded)
+                    ZNSKeyboardDiagDecision(@"portrait_generic_restore", 0,
+                        @{@"restoreReason":view!=owner?@"non_owner":@"eligibility_lost",
+                          @"ownerMatch":@(view==owner && ownerMatch), @"expanded":@YES,
+                          @"restoreAuth":@NO, @"visibleProof":[event[@"continuity"] boolValue]?@"live":@"unproven"});
+                [view restorePortraitKeyboardWithDuration:duration options:options];
+            }
             // Transport/eligibility loss is not an explicit drag or API failure.
             // Preserve an existing user suppression, but do not create one.
             view.portraitKeyboardSuppressed=suppressed;
         }
-        if ([event[@"ended"] boolValue]) view.portraitKeyboardSuppressed=NO;
+        if (notification.object==view.session.keyboardPlacement && [event[@"ended"] boolValue])
+            view.portraitKeyboardSuppressed=NO;
     }
     if (!eligible) {
         static CFTimeInterval lastDiagnostic;

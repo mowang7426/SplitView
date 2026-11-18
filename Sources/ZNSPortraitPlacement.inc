@@ -3,13 +3,15 @@
 // ownership-proven presentation. Bounded grace is for an unconfirmed remount;
 // an App-confirmed shown latch is NOT expired by that deadline.
 - (BOOL)znsPortraitKeyboardContinuity {
-    // PID-validated App phase + same focused scene survive temporary UIKit
-    // host/surface/geometry loss; only DidHide or lifecycle/focus loss ends it.
-    return self.portraitExpansion && self.active && !self.suspended &&
-        !self.invalidated && !self.dismissPending && !self.explicitlyDismissed &&
-        !self.keyboardHidden && self.clientVisibilityKnown &&
-        (self.clientKeyboardShown || self.clientKeyboardWillHide) &&
-        ZNSKeyboardMatchesFocus(self);
+    if (!self.portraitExpansion || !self.active || self.suspended ||
+        self.invalidated || self.dismissPending || self.explicitlyDismissed ||
+        self.keyboardHidden || !ZNSKeyboardMatchesFocus(self)) return NO;
+    // A usable geometry sample and a visible, verified keyboard attachment
+    // are independent. Do not collapse an already-expanded owner just because
+    // its frame/host/conversion is temporarily unavailable without client phase.
+    // This is live evidence, not a new latch or grace period.
+    return (self.clientVisibilityKnown && (self.clientKeyboardShown || self.clientKeyboardWillHide)) ||
+        [self externalKeyboardVisible];
 }
 - (BOOL)znsPortraitPresentationEligible {
     if (!self.portraitExpansion || !self.active || self.suspended ||

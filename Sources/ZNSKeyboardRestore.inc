@@ -1,12 +1,16 @@
 // Production restore; shared verbatim with host transport tests.
 - (void)restore {
     if (self.mutating) return;
-    if (self.portraitExpansion && !self.clientKeyboardWillHide) ZNSPortraitRestoreTiming=@{
-        @"duration":@(self.presentationTimingKnown?self.presentationDuration:0.25), @"options":@(self.presentationOptions),
-        @"bundle":self.bundleIdentifier?:@"",
-        @"clientHidden":@(self.clientVisibilityKnown && self.keyboardHidden && self.active &&
-            !self.suspended && !self.invalidated && ZNSKeyboardMatchesFocus(self)),
-        @"ended":@(self.keyboardHidden || !self.active || self.suspended || self.invalidated)};
+    if (self.portraitExpansion && !self.clientKeyboardWillHide) {
+        ZNSPortraitTimingOwner=self;
+        ZNSPortraitTimingScene=self.scene;
+        ZNSPortraitRestoreTiming=@{
+            @"duration":@(self.presentationTimingKnown?self.presentationDuration:0.25), @"options":@(self.presentationOptions),
+            @"bundle":self.bundleIdentifier?:@"",
+            @"clientHidden":@(self.clientVisibilityKnown && self.keyboardHidden && self.active &&
+                !self.suspended && !self.invalidated && ZNSKeyboardMatchesFocus(self)),
+            @"ended":@(self.keyboardHidden || !self.active || self.suspended || self.invalidated)};
+    }
     self.mutating=YES;
     self.nativeScreenKeyboard=NO;
     [self.keyboardContainer.layer removeAllAnimations];
