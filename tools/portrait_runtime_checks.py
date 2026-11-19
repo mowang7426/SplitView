@@ -54,7 +54,7 @@ int main(void) { @autoreleasepool {
     (tmp/'tools').mkdir();(tmp/'Sources').mkdir()
     for name in ['PortraitEventTests.m','PortraitSceneTests.m','PortraitVisualTests.inc','PortraitRestoreTests.inc']:
         shutil.copy2(p/'tools'/name,tmp/'tools'/name)
-    for name in ['ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc']:
+    for name in ['ZNSPortraitCompensation.inc','ZNSGeometry.h','ZNSPortraitRestoreTransaction.inc','ZNSPortraitKeyboardGeometry.h','ZNSPortraitPlacement.inc','ZNSPortraitFloating.inc','ZNSPortraitManager.inc','ZNSPortraitScene.inc','ZNSKeyboardRestore.inc','ZNSPortraitVisibilityEvent.inc','ZNSPortraitVisualEvent.inc','ZNSPortraitInputState.h','ZNSPortraitNativeHide.inc']:
         shutil.copy2(p/'Sources'/name,tmp/'Sources'/name)
     faults=[('shown-race','ZNSPortraitPlacement.inc','BOOL continuous=self.portraitCanvasTransitionUntil>CACurrentMediaTime();','BOOL continuous=self.clientKeyboardShown && self.portraitCanvasTransitionUntil>CACurrentMediaTime();'),
             ('shown-expiry','ZNSPortraitPlacement.inc','return visible || self.portraitKeyboardVisibleLatch || continuous;','return visible || continuous;'),
@@ -68,7 +68,10 @@ int main(void) { @autoreleasepool {
             ('window-enumeration-reentry','ZNSPortraitManager.inc','for (ZNSFloatingView *view in [self.windows copy])','for (ZNSFloatingView *view in self.windows)'),
             ('animation-restart','ZNSPortraitFloating.inc','if (self.portraitKeyboardExpanded && CGRectEqualToRect(frame,self.portraitKeyboardTarget)) return;','/* faulty repeated animation */')]
     faults += [
-        ('native-visible-continuity-ignored','ZNSPortraitPlacement.inc','        [self externalKeyboardVisible];','        NO;'),
+        ('native-unreadable-input-closes','ZNSPortraitNativeHide.inc','    if (clientEnd || clientWill)', '    if (didHide && input==ZNSPortraitInputUnknown) [self znsFinishPortraitHide:ZNSPortraitCloseNative];\n    if (clientEnd || clientWill)'),
+        ('native-scope-loss-collapses','ZNSPortraitPlacement.inc',' || [self znsPortraitInputScopeCurrent];',';'),
+        ('native-real-close-ignored','ZNSPortraitNativeHide.inc','    else if (nativeEnd) [self znsFinishPortraitHide:ZNSPortraitCloseNative];','    else if (nativeEnd) (void)nativeEnd;'),
+        ('native-visible-continuity-ignored','ZNSPortraitPlacement.inc','        [self externalKeyboardVisible] || [self znsPortraitInputScopeCurrent];','        NO;'),
         ('geometry-accepts-wrong-placement','ZNSPortraitManager.inc','owner && notification.object==owner.session.keyboardPlacement &&','owner &&'),
         ('restore-early-clear','ZNSPortraitRestoreTransaction.inc','if (sceneMatches && [self.keyboardPlacement znsRestoreSizeMatches:self.znsPortraitRestoreRequest]) {','if (sceneMatches) {'),
         ('restore-intermediate-host-layout','ZNSPortraitRestoreTransaction.inc','        self.znsPortraitRestoreCompletion=completion;','        self.znsPortraitRestoreCompletion=completion;\n        ZNSConfigureHostCanvas(self.hostView,[desired frame].size,UIInterfaceOrientationPortrait);'),

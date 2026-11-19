@@ -44,7 +44,10 @@ static BOOL ZNSDiagAllow(NSString *key) {
     }
 }
 static void ZNSDiagAppend(NSDictionary *record) {
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue=dispatch_queue_create("com.zengniu.splitview.keyboard-diag", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(queue, ^{
         (void)mkdir("/var/mobile/Library/Logs",0700);
         const char *path=ZNS_DIAG_PATH.fileSystemRepresentation;
         int fd=open(path,O_CREAT|O_RDWR|O_CLOEXEC,0600);
@@ -69,7 +72,7 @@ static void ZNSDiagAppend(NSDictionary *record) {
 }
 void ZNSKeyboardDiagEmit(ZNSKeyboardDiagPhase phase, NSUInteger generation, NSUInteger serial, NSDictionary *fields) {
     static NSString *names[]={@"",@"WillShow",@"DidShow",@"WillChange",@"DidChange",@"WillHide",@"DidHide"};
-    if(phase<1 || phase>6 || !ZNSKeyboardDiagEnabled() || !ZNSDiagAllow(@"client_phase")) return;
+    if(phase<1 || phase>6 || !ZNSKeyboardDiagEnabled() || !ZNSDiagAllow(names[phase])) return;
     NSArray *allowed=@[@"visibleProof",@"ownerMatch",@"focusMatch",@"sceneCount",@"activeSceneCount",@"sceneMatch",@"windowMatch",@"canvasMatch",@"frameInScreen",@"placementVisible",@"expanded",@"restoreAuth",@"restoreReason",@"pollAttempt",@"ack",@"sceneApplied",@"handoff",@"layoutEpoch",@"swipe",@"animation"];
     NSMutableDictionary *safe=[@{@"event":names[phase],@"generation":@(generation),@"serial":@(serial),@"pid":@(getpid()),@"time":@([[NSDate date] timeIntervalSince1970])} mutableCopy];
     for(NSString *key in allowed) if(fields[key]) safe[key]=ZNSDiagSafe(fields[key]);
@@ -78,10 +81,19 @@ void ZNSKeyboardDiagEmit(ZNSKeyboardDiagPhase phase, NSUInteger generation, NSUI
 }
 void ZNSKeyboardDiagDecision(NSString *decision, NSUInteger generation, NSDictionary *fields) {
     NSString *safeEvent=[NSString stringWithFormat:@"Decision_%@",ZNSDiagSafe(decision)];
-    if(!ZNSKeyboardDiagEnabled() || !ZNSDiagAllow(safeEvent)) return;
+    if(!ZNSKeyboardDiagEnabled()) return;
+    // A preceding hint must not consume the budget for an authorized close or
+    // for a different geometry/lifecycle failure on the same decision path.
+    NSString *key=[NSString stringWithFormat:@"%@:%@:%@",safeEvent,
+        ZNSDiagSafe(fields[@"restoreReason"]),ZNSDiagSafe(fields[@"geometryReason"])];
+    if(!ZNSDiagAllow(key)) return;
     NSMutableDictionary *record=[@{@"event":safeEvent,@"generation":@(generation),@"pid":@(getpid()),@"time":@([[NSDate date] timeIntervalSince1970])} mutableCopy];
     NSArray *allowed=@[@"visibleProof",@"ownerMatch",@"focusMatch",@"sceneCount",@"activeSceneCount",@"sceneMatch",@"windowMatch",@"canvasMatch",@"frameInScreen",@"placementVisible",@"expanded",@"restoreAuth",@"restoreReason",@"pollAttempt",@"ack",@"sceneApplied",@"handoff",@"layoutEpoch",@"swipe",@"animation"];
     for(NSString *key in allowed) if(fields[key]) record[key]=ZNSDiagSafe(fields[key]);
+    for(NSString *flag in @[@"clientPhase",@"inputState",@"scopeMatch",@"delegateMatch",@"hideArmed",
+        @"mutating",@"dismissPending",@"ended",@"closeKind",@"continuity",@"layoutInFlight",@"ready"])
+        if ([fields[flag] isKindOfClass:NSNumber.class]) record[flag]=fields[flag];
+    if (fields[@"geometryReason"]) record[@"geometryReason"]=ZNSDiagSafe(fields[@"geometryReason"]);
     ZNSDiagAppend(record);
     os_log(ZNSKeyboardDiagLog(),"%{public}s",safeEvent.UTF8String);
 }

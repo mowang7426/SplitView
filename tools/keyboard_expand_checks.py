@@ -3,8 +3,8 @@ p=pathlib.Path(__file__).resolve().parents[1]
 for f in (p/'Preferences').rglob('*.plist'):
     plistlib.loads(f.read_bytes())
 manifest=json.loads((p/'apelin-project.json').read_text())
-assert manifest['package']['version']=='0.7.66+keyboard16.fix1'
-assert 'Version: 0.7.66+keyboard16.fix1' in (p/'control').read_text()
+assert manifest['package']['version']=='0.7.66+keyboard16.fix2'
+assert 'Version: 0.7.66+keyboard16.fix2' in (p/'control').read_text()
 for name in ['Sources/ZNSAuthorization.h','Sources/ZNSKeyboardFocus.m','Sources/ZNSKeyboardPolicy.h']:
     original=subprocess.check_output(['git','show','e174b5232a0f7e18ed79c25e3e83481de507b0e7:'+name],cwd=p)
     current=(p/name).read_bytes()
@@ -53,7 +53,7 @@ assert 'portraitKeyboardRestoreGeneration' in restore and 'portraitKeyboardResto
 assert 'ZNSPublishPortraitHide' not in source
 willHide=source.split('- (void)znsClientWillHide {',1)[1].split('- (void)znsClientDidHide',1)[0]
 assert 'postNotification' not in willHide and '[self restore]' not in willHide
-assert 'P3_SYSTEM_WILL_HIDE_AWAIT_CLIENT' in source
+assert 'znsHandlePortraitNativeHide' in source
 assert '@"will-hide"' in source
 assert 'portraitKeyboardVisibleLatch' in source
 classifier=(p/'Sources/ZNSPortraitVisibilityEvent.inc').read_text()

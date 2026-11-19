@@ -4,12 +4,12 @@
     if (self.portraitExpansion && !self.clientKeyboardWillHide) {
         ZNSPortraitTimingOwner=self;
         ZNSPortraitTimingScene=self.scene;
-        ZNSPortraitRestoreTiming=@{
+        self.portraitRestoreTiming=@{
             @"duration":@(self.presentationTimingKnown?self.presentationDuration:0.25), @"options":@(self.presentationOptions),
             @"bundle":self.bundleIdentifier?:@"",
-            @"clientHidden":@(self.clientVisibilityKnown && self.keyboardHidden && self.active &&
-                !self.suspended && !self.invalidated && ZNSKeyboardMatchesFocus(self)),
-            @"ended":@(self.keyboardHidden || !self.active || self.suspended || self.invalidated)};
+            @"closeKind":@(self.active && !self.suspended && !self.invalidated && ZNSKeyboardMatchesFocus(self) ?
+                self.portraitClose : ZNSPortraitCloseNone),
+            @"ended":@(self.portraitClose!=ZNSPortraitCloseNone || !self.active || self.suspended || self.invalidated)};
     }
     self.mutating=YES;
     self.nativeScreenKeyboard=NO;

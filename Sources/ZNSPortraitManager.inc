@@ -23,49 +23,55 @@
     ZNSFloatingView *owner=self.floating;
     BOOL ownerMatch=owner && notification.object==owner.session.keyboardPlacement &&
         [owner.session.bundleIdentifier isEqual:event[@"bundle"]];
-    BOOL eligible=ownerMatch && self.enabled && !self.window.hidden && owner.ready && !owner.hidden &&
-        !owner.closing && !owner.docked && !owner.thumbnail && !owner.dipped &&
-        !owner.dismissing && !owner.rebounding && !owner.fullscreenExpanding &&
-        !owner.activeManipulation && !owner.session.layoutInFlight && !owner.session.landscape;
+    NSString *exitReason=!ownerMatch?@"owner_mismatch":!self.enabled?@"manager_disabled":
+        self.window.hidden||owner.hidden?@"window_hidden":
+        owner.closing||owner.dismissing?@"window_closing":
+        owner.docked||owner.thumbnail||owner.dipped?@"window_parked":
+        owner.rebounding||owner.fullscreenExpanding?@"window_transition":
+        owner.activeManipulation?@"user_manipulation":owner.session.landscape?@"landscape":nil;
     CGRect target=CGRectZero;
     UIView *root=owner.superview;
     UIWindow *source=event[@"window"];
-    if (eligible && root && source && [event[@"frame"] isKindOfClass:NSValue.class]) {
+    NSString *geometryReason=!owner.ready?@"not_ready":owner.session.layoutInFlight?@"layout_in_flight":
+        !root?@"root_missing":!source?@"source_missing":
+        ![event[@"frame"] isKindOfClass:NSValue.class]?@"frame_missing":nil;
+    BOOL eligible=!exitReason && !geometryReason;
+    if (eligible) {
         CGRect keyboard=[root convertRect:[event[@"frame"] CGRectValue] fromView:source];
         eligible=ZNSPortraitKeyboardTarget(keyboard,root.bounds,root.safeAreaInsets.top,&target);
-    } else eligible=NO;
-    // Keep only the SAME live, focused App's already-expanded scene through
-    // transient host/window remount, in-flight layout or invalid conversion.
-    // Explicit end, close, drag, park, rotation and non-owner still restore.
-    BOOL holdUnknown=!eligible && ![event[@"ended"] boolValue] &&
-        [event[@"continuity"] boolValue] && owner.portraitKeyboardExpanded &&
-        ownerMatch && self.enabled &&
-        !self.window.hidden && !owner.hidden && !owner.closing && !owner.docked &&
-        !owner.thumbnail && !owner.dipped && !owner.dismissing &&
-        !owner.rebounding && !owner.fullscreenExpanding &&
-        !owner.activeManipulation && !owner.session.landscape;
+        if (!eligible) geometryReason=@"target_invalid";
+    }
+    BOOL ended=[event[@"ended"] boolValue];
+    ZNSPortraitClose close=[event[@"closeKind"] unsignedIntegerValue];
+    // Continuity retains an existing expanded window only. It is never a
+    // substitute for a terminal phase or for valid expansion geometry.
+    BOOL holdUnknown=!eligible && !ended && !exitReason && owner.portraitKeyboardExpanded &&
+        [event[@"continuity"] boolValue];
     if (!eligible && owner.portraitKeyboardExpanded)
         ZNSKeyboardDiagDecision(@"portrait_geometry", 0,
-            @{@"restoreReason":holdUnknown?@"hold_live_proof":ownerMatch?@"geometry_fallback":@"no_matching_presentation",
+            @{@"restoreReason":holdUnknown?@"hold_scoped_input":ended?@"owner_ended":exitReason?:@"input_unproven",
+              @"geometryReason":geometryReason?:@"none", @"restoreAuth":@(ended && close!=ZNSPortraitCloseNone && ownerMatch),
               @"ownerMatch":@(ownerMatch), @"expanded":@YES, @"windowMatch":@(source!=nil),
-              @"visibleProof":[event[@"continuity"] boolValue]?@"live":@"unproven"});
+              @"continuity":@([event[@"continuity"] boolValue]), @"ended":@(ended), @"closeKind":@(close),
+              @"layoutInFlight":@(owner.session.layoutInFlight), @"ready":@(owner.ready)});
     // Scene/host callbacks can synchronously remove windows during recovery.
     for (ZNSFloatingView *view in [self.windows copy]) {
         BOOL suppressed=view.portraitKeyboardSuppressed;
         if (view!=owner || (!eligible && !holdUnknown)) {
-            if (view==owner && ownerMatch && [event[@"clientHidden"] boolValue] && [event[@"ended"] boolValue] &&
-                !owner.closing && !owner.dismissing && !owner.activeManipulation &&
-                !owner.docked && !owner.thumbnail && !owner.dipped && !owner.rebounding &&
-                !owner.fullscreenExpanding && !owner.session.landscape && !owner.session.layoutInFlight)
-                [view znsRestorePortraitKeyboardAfterHide];
-            else {
-                if (view.portraitKeyboardExpanded)
-                    ZNSKeyboardDiagDecision(@"portrait_generic_restore", 0,
-                        @{@"restoreReason":view!=owner?@"non_owner":@"eligibility_lost",
-                          @"ownerMatch":@(view==owner && ownerMatch), @"expanded":@YES,
-                          @"restoreAuth":@NO, @"visibleProof":[event[@"continuity"] boolValue]?@"live":@"unproven"});
-                [view restorePortraitKeyboardWithDuration:duration options:options];
-            }
+            BOOL verifiedClose=view==owner && ownerMatch && ended && close!=ZNSPortraitCloseNone;
+            BOOL normalClose=verifiedClose && !exitReason && !owner.session.layoutInFlight;
+            if (view.portraitKeyboardExpanded)
+                ZNSKeyboardDiagDecision(normalClose?@"portrait_verified_restore":@"portrait_generic_restore", 0,
+                    @{@"restoreReason":view!=owner?@"non_owner":exitReason?:
+                        verifiedClose?(close==ZNSPortraitCloseClient?@"client_did_hide":@"native_paired_empty"):
+                        ended?@"lifecycle_end":@"input_unproven",
+                      @"geometryReason":geometryReason?:@"none", @"windowMatch":@(source!=nil),
+                      @"ownerMatch":@(view==owner && ownerMatch), @"expanded":@YES,
+                      @"restoreAuth":@(verifiedClose), @"ended":@(ended), @"closeKind":@(close),
+                      @"continuity":@([event[@"continuity"] boolValue]),
+                      @"layoutInFlight":@(view.session.layoutInFlight), @"ready":@(view.ready)});
+            if (normalClose) [view znsRestorePortraitKeyboardAfterHide];
+            else [view restorePortraitKeyboardWithDuration:duration options:options];
             // Transport/eligibility loss is not an explicit drag or API failure.
             // Preserve an existing user suppression, but do not create one.
             view.portraitKeyboardSuppressed=suppressed;

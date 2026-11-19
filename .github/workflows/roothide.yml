@@ -2,7 +2,7 @@ name: SplitView QQ keyboard16 build
 on:
   workflow_dispatch:
   push:
-    branches: [diag/qq-keyboard-state-20261113, diag/qq-keyboard-export-no-mac-20261113]
+    branches: [fix/qq-keyboard-close-evidence]
 permissions:
   contents: read
 env:
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: splitview-roothide-qq-keyboard16-fix1
+          name: splitview-roothide-qq-keyboard16-fix2
           path: |
             packages/*.deb
             build/

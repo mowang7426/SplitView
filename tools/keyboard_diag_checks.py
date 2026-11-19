@@ -11,5 +11,9 @@ for forbidden in ('keyboardText','inputText','responderAddress','bundleIdentifie
 assert 'allowed.invertedSet' in s and 's.length>32' in s
 assert 'now-previous.doubleValue<0.12' in s
 assert 'ZNS_KEYBOARD_DIAG_DEFAULT_ON' in s
-assert 'ZNSKeyboardDiagDecision' in (p/'Sources/ZNSKeyboardPlacement.m').read_text()
+assert 'ZNSKeyboardDiagDecision' in (p/'Sources/ZNSPortraitNativeHide.inc').read_text()
+assert 'ZNSDiagAllow(names[phase])' in s and 'DISPATCH_QUEUE_SERIAL' in s
+assert 'ZNSDiagSafe(fields[@"restoreReason"]),ZNSDiagSafe(fields[@"geometryReason"])' in s
+for flag in ('inputState','scopeMatch','delegateMatch','hideArmed','closeKind','continuity','layoutInFlight'):
+    assert '@"'+flag+'"' in s
 print('PASS diagnostic schema/privacy/limit/production-path/default-gate invariants')

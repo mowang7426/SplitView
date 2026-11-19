@@ -1,3 +1,4 @@
+#import "../Sources/ZNSPortraitInputState.h"
 // Runs production placement + scene + floating view + manager methods.
 // Only UIKit/render-server transport is mocked. NOT a device rendering test.
 #define main ZNSSceneTestsMain
@@ -20,7 +21,6 @@ typedef NS_ENUM(NSUInteger,ZNSClientKeyboardPhase) {
     ZNSClientKeyboardUnknown=0, ZNSClientKeyboardShown=1,
     ZNSClientKeyboardWillHide=2, ZNSClientKeyboardHidden=3
 };
-static NSDictionary *ZNSPortraitRestoreTiming;
 @class ZNSKeyboardPlacement;
 static __weak ZNSKeyboardPlacement *ZNSPortraitTimingOwner;
 static __weak id ZNSPortraitTimingScene;
@@ -126,6 +126,12 @@ static id ZNSKeyboardObject(id object,NSString *key) { (void)key; return object;
 static id ZNSActiveKeyboardDelegate(void) { return @1; }
 @interface ZNSKeyboardPlacement : ZNSTempKeyboard
 @property(nonatomic,weak) id scene;
+@property(nonatomic,weak) id portraitInputScene, portraitInputDelegate;
+@property(nonatomic) pid_t portraitInputPID;
+@property(nonatomic) BOOL portraitNativeWillHide;
+@property(nonatomic) ZNSPortraitClose portraitClose;
+@property(nonatomic,copy) NSDictionary *portraitRestoreTiming;
+
 @property(nonatomic) BOOL portraitExpansion,active,suspended,invalidated,keyboardHidden,dismissPending,explicitlyDismissed,mutating,clientVisibilityKnown,clientKeyboardShown,clientKeyboardWillHide,portraitKeyboardVisibleLatch,attached;
 @property(nonatomic) CFTimeInterval portraitCanvasTransitionUntil,hiddenAt;
 @property(nonatomic) CGRect portraitKeyboardFrame,geometryBounds,geometryContent,clientKeyboardRegion,reportedKeyboardFrame;
@@ -153,6 +159,12 @@ static id ZNSActiveKeyboardDelegate(void) { return @1; }
 - (BOOL)externalKeyboardVisible;
 - (void)restore;
 - (void)schedule;
+- (void)znsResetPortraitInputScope;
+- (BOOL)znsPortraitInputScopeCurrent;
+- (void)znsRecordPortraitInputWithDelegate:(id)delegate;
+- (void)znsFinishPortraitHide:(ZNSPortraitClose)close;
+- (void)znsHandlePortraitNativeHide:(BOOL)didHide phase:(ZNSClientKeyboardPhase)phase
+                           delegate:(id)delegate input:(ZNSPortraitInputState)input;
 - (void)clearShowProof;
 - (void)rejectExternal:(NSString *)reason;
 - (BOOL)znsPortraitPresentationEligible;
@@ -182,6 +194,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 - (void)clearShowProof { self.portraitCanvasTransitionUntil=0; self.portraitKeyboardVisibleLatch=NO; self.geometryKeyboard=nil; self.geometryDelegate=nil; }
 - (void)rejectExternal:(NSString *)reason { self.lastReason=reason; }
 #include "../Sources/ZNSPortraitPlacement.inc"
+#include "../Sources/ZNSPortraitNativeHide.inc"
 @end
 @interface ZNSFloatingView : UIView
 @property(nonatomic) BOOL portraitKeyboardExpanded,portraitKeyboardSuppressed,portraitKeyboardRestoring;
@@ -271,18 +284,75 @@ static void Publish(ZNSWindowManager *m,ZNSKeyboardPlacement *p,BOOL ended) {
           @"options":@(p.presentationOptions)}:nil;
     BOOL continuity=!current && previous && p==previousOwner &&
         [p.bundleIdentifier isEqual:previous[@"bundle"]] && [p znsPortraitKeyboardContinuity];
-    NSDictionary *restore=ZNSPortraitRestoreTiming?:
+    NSDictionary *restore=p.portraitRestoreTiming?:
         @{@"ended":@(ended),@"duration":@0.25,@"options":@0};
     NSDictionary *info=ZNSPortraitVisibilityEvent(current,previous,restore,continuity);
     if (current) previousOwner=p;
     if (!continuity) previous=current;
     [m portraitKeyboardGeometryChanged:[NSNotification notificationWithName:@"test" object:p userInfo:info]];
 }
+static void ZNSTestScopedNativeHide(void) {
+    ZNSKeyboardPlacement *p;
+    ZNSWindowManager *m=Manager(&p);
+    ZNSFloatingView *v=m.floating;
+    NSObject *delegate=[NSObject new];
+    NSObject *otherDelegate=[NSObject new];
+    CGRect narrow=v.frame;
+    [p znsRecordPortraitInputWithDelegate:delegate];
+    Publish(m,p,NO); Ack(v.session);
+    CGRect wide=v.frame;
+    assert(v.portraitKeyboardExpanded && !p.clientVisibilityKnown);
+    NSUInteger restores=p.restores;
+    [p znsHandlePortraitNativeHide:NO phase:ZNSClientKeyboardUnknown delegate:nil input:ZNSPortraitInputUnknown];
+    [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:nil input:ZNSPortraitInputUnknown];
+    assert(!p.keyboardHidden && !p.clientVisibilityKnown && p.restores==restores);
+    [p znsApplyNativeShowResult:NO inputPresent:NO];
+    p.host.window=nil;
+    [p restore]; // real transport tear-down; removes the attached live proof
+    p.portraitCanvasTransitionUntil=0;
+    for (int i=0;i<2;i++) {
+        ZNSNow+=5;
+        Publish(m,p,NO);
+        assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,wide) && !p.keyboardHidden);
+    }
+    [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:delegate input:ZNSPortraitInputEmpty];
+    assert(!p.keyboardHidden); // explicit empty alone is not a paired end
+    [p znsHandlePortraitNativeHide:NO phase:ZNSClientKeyboardUnknown delegate:delegate input:ZNSPortraitInputPresent];
+    [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:otherDelegate input:ZNSPortraitInputEmpty];
+    assert(!p.keyboardHidden); // different delegate cannot end this scope
+    [p znsHandlePortraitNativeHide:NO phase:ZNSClientKeyboardUnknown delegate:delegate input:ZNSPortraitInputPresent];
+    [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:delegate input:ZNSPortraitInputEmpty];
+    assert(p.keyboardHidden && !p.clientVisibilityKnown && p.portraitClose==ZNSPortraitCloseNative);
+    Publish(m,p,YES);
+    assert(v.portraitKeyboardExpanded && v.session.znsPortraitRestorePending);
+    ClientLayout(v.session); Ack(v.session);
+    assert(!v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,narrow));
+    puts("PASS scoped native hide: unknown/no source stays expanded; unpaired/wrong delegate cannot close; paired same-delegate empty restores through client-size acknowledgement.");
+
+    // A replaced process cannot inherit continuity from a previous owner.
+    m=Manager(&p); v=m.floating;
+    [p znsRecordPortraitInputWithDelegate:delegate]; Publish(m,p,NO); Ack(v.session);
+    p.host.window=nil; p.attached=NO;
+    ZNSVerifiedPID=43;
+    Publish(m,p,NO);
+    assert(!v.portraitKeyboardExpanded);
+    ZNSVerifiedPID=42;
+
+    m=Manager(&p); v=m.floating;
+    [p znsRecordPortraitInputWithDelegate:delegate]; Publish(m,p,NO); Ack(v.session);
+    p.host.window=nil; p.attached=NO;
+    Publish(m,p,NO);
+    [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardHidden delegate:nil input:ZNSPortraitInputUnknown];
+    assert(p.portraitClose==ZNSPortraitCloseClient);
+    Publish(m,p,YES); ClientLayout(v.session); Ack(v.session);
+    assert(!v.portraitKeyboardExpanded);
+}
 #include "PortraitVisualTests.inc"
 int main(void) { @autoreleasepool {
     assert(ZNSSceneTestsMain()==0);
     ZNSAnimationEnds=[NSMutableArray new];
     ZNSReady=[NSMutableArray new]; ZNSDeadlines=[NSMutableArray new];
+    ZNSTestScopedNativeHide();
     ZNSKeyboardPlacement *p; ZNSWindowManager *m=Manager(&p); ZNSFloatingView *v=m.floating;
     CGRect original=v.frame,expanded=CGRectMake(0,152,390,692);
     // Regression: verified surface arrives BEFORE the asynchronous App shown.

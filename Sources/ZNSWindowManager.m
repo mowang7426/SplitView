@@ -1,3 +1,4 @@
+#import "ZNSPortraitInputState.h"
 #import "ZNSWindowManager.h"
 #import "ZNSExitShatter.h"
 #import "ZNSWindowOpening.h"

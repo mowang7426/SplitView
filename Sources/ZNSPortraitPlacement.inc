@@ -1,3 +1,30 @@
+- (void)znsResetPortraitInputScope {
+    self.portraitInputScene=nil;
+    self.portraitInputPID=0;
+    self.portraitInputDelegate=nil;
+    self.portraitNativeWillHide=NO;
+    self.portraitClose=ZNSPortraitCloseNone;
+}
+- (BOOL)znsPortraitInputScopeCurrent {
+    return self.portraitExpansion && self.active && !self.invalidated && !self.suspended &&
+        self.portraitInputScene && self.portraitInputScene==self.scene &&
+        self.portraitInputPID>0 && self.portraitInputPID==ZNSKeyboardClientPID(self) &&
+        ZNSKeyboardMatchesFocus(self);
+}
+- (void)znsRecordPortraitInputWithDelegate:(id)delegate {
+    // Called only for a verified visible presentation; never use the scope to
+    // select a surface, attach it, or expand a new window without geometry.
+    pid_t pid=ZNSKeyboardClientPID(self);
+    if (!self.scene || pid<=0 || !ZNSKeyboardMatchesFocus(self)) return;
+    if (![self znsPortraitInputScopeCurrent]) [self znsResetPortraitInputScope];
+    self.portraitRestoreTiming=nil;
+    self.portraitInputScene=self.scene;
+    self.portraitInputPID=pid;
+    if (delegate && delegate!=self.portraitInputDelegate) {
+        self.portraitInputDelegate=delegate;
+        self.portraitNativeWillHide=NO;
+    }
+}
 // Shared production methods, executed verbatim by PortraitEventTests.
 // A reparent/canvas refresh is NOT a keyboard hide. Keep only an already
 // ownership-proven presentation. Bounded grace is for an unconfirmed remount;
@@ -11,7 +38,7 @@
     // its frame/host/conversion is temporarily unavailable without client phase.
     // This is live evidence, not a new latch or grace period.
     return (self.clientVisibilityKnown && (self.clientKeyboardShown || self.clientKeyboardWillHide)) ||
-        [self externalKeyboardVisible];
+        [self externalKeyboardVisible] || [self znsPortraitInputScopeCurrent];
 }
 - (BOOL)znsPortraitPresentationEligible {
     if (!self.portraitExpansion || !self.active || self.suspended ||
@@ -40,9 +67,14 @@
 - (void)znsApplyNativeShowResult:(BOOL)result inputPresent:(BOOL)inputPresent {
     if (self.dismissPending || self.explicitlyDismissed || !ZNSKeyboardMatchesFocus(self)) return;
     BOOL hidden=!result || !inputPresent;
-    if (hidden && [self znsDeferPortraitSystemHide]) {
+    if (hidden && ([self znsDeferPortraitSystemHide] || [self znsPortraitInputScopeCurrent])) {
         [self rejectExternal:@"P3_SHOW_HINT_DURING_REPARENT"];
         return;
+    }
+    if (!hidden) {
+        self.portraitNativeWillHide=NO;
+        self.portraitClose=ZNSPortraitCloseNone;
+        self.portraitRestoreTiming=nil;
     }
     self.keyboardHidden=hidden;
 }
@@ -53,6 +85,9 @@
     }
     if (phase==ZNSClientKeyboardWillHide) { [self znsClientWillHide]; return; }
     if (phase!=ZNSClientKeyboardShown || self.dismissPending) return;
+    self.portraitClose=ZNSPortraitCloseNone;
+    self.portraitNativeWillHide=NO;
+    self.portraitRestoreTiming=nil;
     BOOL cancelledHide=self.clientKeyboardWillHide || self.keyboardHidden;
     self.clientVisibilityKnown=YES; self.clientKeyboardShown=YES;
     self.clientKeyboardWillHide=NO;
@@ -84,15 +119,20 @@
     ZNSPublishPortraitVisualWillHideAsync(self,generation,pid,bundle,duration,options,YES);
 }
 - (void)znsClientDidHide {
+    [self znsFinishPortraitHide:ZNSPortraitCloseClient];
+}
+- (void)znsFinishPortraitHide:(ZNSPortraitClose)close {
+    [self znsResetPortraitInputScope];
+    self.portraitClose=close;
     self.portraitKeyboardVisualPhaseGeneration++;
     self.portraitCanvasTransitionUntil=0;
     self.clientKeyboardWillHide=NO; self.portraitKeyboardVisibleLatch=NO;
     self.keyboardHidden=YES; self.hiddenAt=CACurrentMediaTime();
-    self.clientVisibilityKnown=YES; self.clientKeyboardShown=NO;
+    self.clientVisibilityKnown=(close==ZNSPortraitCloseClient); self.clientKeyboardShown=NO;
     self.dismissPending=NO; self.dismissGeneration++;
     self.reportedKeyboardFrame=CGRectZero; self.frameDelegate=nil;
     [self clearShowProof]; [self restore];
-    [self rejectExternal:@"P3_CLIENT_HIDE"];
+    [self rejectExternal:close==ZNSPortraitCloseClient?@"P3_CLIENT_HIDE":@"P3_NATIVE_PAIRED_HIDE"];
 }
 - (BOOL)znsDeferPortraitSystemHide {
     // SpringBoard notifications caused by our own detach/reparent are not
@@ -105,7 +145,7 @@
         ZNSKeyboardInputPresent(ZNSKeyboardObject(ZNSActiveKeyboardDelegate(),@"inputViews"));
 }
 - (void)znsAcceptClientGeometry:(CGRect)region canvas:(CGSize)canvas valid:(BOOL)valid focused:(BOOL)focused {
-    if (self.clientKeyboardWillHide || self.dismissPending) return;
+    if (self.clientKeyboardWillHide || self.dismissPending || (self.portraitExpansion && self.portraitClose!=ZNSPortraitCloseNone)) return;
     if (self.portraitExpansion && (!valid || fabs(canvas.width-self.canvas.width)>1 ||
                                   fabs(canvas.height-self.canvas.height)>1)) {
         // A zero serial, old canvas, or partial scene/window resize is unknown,
