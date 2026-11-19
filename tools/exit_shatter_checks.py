@@ -24,6 +24,7 @@ def run_tests(include, binary):
 # the portrait event/scene paths below. Keep all other protected sources pinned.
 KEYBOARD_BRANCH_FILES = {
     'ZNSKeyboardClient.m', 'ZNSKeyboardDiag.m', 'ZNSKeyboardDiag.h', 'ZNSKeyboardPlacement.m',
+    'ZNSPortraitInputState.h', 'ZNSPortraitNativeHide.inc',
     'ZNSKeyboardRestore.inc', 'ZNSPortraitManager.inc', 'ZNSPortraitPlacement.inc',
     'ZNSPortraitVisibilityEvent.inc', 'ZNSPortraitVisualEvent.inc', 'ZNSPortraitScene.inc', 'ZNSSceneSession.m',
 }

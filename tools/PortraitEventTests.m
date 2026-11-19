@@ -194,6 +194,14 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 - (void)clearShowProof { self.portraitCanvasTransitionUntil=0; self.portraitKeyboardVisibleLatch=NO; self.geometryKeyboard=nil; self.geometryDelegate=nil; }
 - (void)rejectExternal:(NSString *)reason { self.lastReason=reason; }
 #include "../Sources/ZNSPortraitPlacement.inc"
+static NSString *ZNSLastPortraitDecision;
+static NSDictionary *ZNSLastPortraitFlags;
+static void ZNSCapturePortraitDecision(NSString *event, NSUInteger generation, NSDictionary *fields) {
+    ZNSKeyboardDiagDecision(event,generation,fields);
+    ZNSLastPortraitDecision=event;
+    ZNSLastPortraitFlags=fields;
+}
+#define ZNSKeyboardDiagDecision ZNSCapturePortraitDecision
 #include "../Sources/ZNSPortraitNativeHide.inc"
 @end
 @interface ZNSFloatingView : UIView
@@ -251,6 +259,7 @@ static pid_t ZNSKeyboardClientPID(ZNSKeyboardPlacement *owner) { (void)owner; re
 @end
 @implementation ZNSWindowManager
 #include "../Sources/ZNSPortraitManager.inc"
+#undef ZNSKeyboardDiagDecision
 @end
 static ZNSWindowManager *Manager(ZNSKeyboardPlacement **placement) {
     ZNSWindowManager *m=[ZNSWindowManager new]; m.enabled=YES; m.window=[UIWindow new];
@@ -306,6 +315,10 @@ static void ZNSTestScopedNativeHide(void) {
     [p znsHandlePortraitNativeHide:NO phase:ZNSClientKeyboardUnknown delegate:nil input:ZNSPortraitInputUnknown];
     [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:nil input:ZNSPortraitInputUnknown];
     assert(!p.keyboardHidden && !p.clientVisibilityKnown && p.restores==restores);
+    assert([ZNSLastPortraitDecision isEqual:@"portrait_native_did_hide"] &&
+        [ZNSLastPortraitFlags[@"restoreReason"] isEqual:@"native_hint_only"] &&
+        [ZNSLastPortraitFlags[@"inputState"] unsignedIntegerValue]==ZNSPortraitInputUnknown &&
+        [ZNSLastPortraitFlags[@"scopeMatch"] boolValue] && ![ZNSLastPortraitFlags[@"restoreAuth"] boolValue]);
     [p znsApplyNativeShowResult:NO inputPresent:NO];
     p.host.window=nil;
     [p restore]; // real transport tear-down; removes the attached live proof
@@ -314,6 +327,9 @@ static void ZNSTestScopedNativeHide(void) {
         ZNSNow+=5;
         Publish(m,p,NO);
         assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,wide) && !p.keyboardHidden);
+        assert([ZNSLastPortraitDecision isEqual:@"portrait_geometry"] &&
+            [ZNSLastPortraitFlags[@"geometryReason"] isEqual:@"source_missing"] &&
+            [ZNSLastPortraitFlags[@"continuity"] boolValue] && ![ZNSLastPortraitFlags[@"restoreAuth"] boolValue]);
     }
     [p znsHandlePortraitNativeHide:YES phase:ZNSClientKeyboardUnknown delegate:delegate input:ZNSPortraitInputEmpty];
     assert(!p.keyboardHidden); // explicit empty alone is not a paired end
@@ -325,6 +341,9 @@ static void ZNSTestScopedNativeHide(void) {
     assert(p.keyboardHidden && !p.clientVisibilityKnown && p.portraitClose==ZNSPortraitCloseNative);
     Publish(m,p,YES);
     assert(v.portraitKeyboardExpanded && v.session.znsPortraitRestorePending);
+    assert([ZNSLastPortraitDecision isEqual:@"portrait_verified_restore"] &&
+        [ZNSLastPortraitFlags[@"restoreReason"] isEqual:@"native_paired_empty"] &&
+        [ZNSLastPortraitFlags[@"restoreAuth"] boolValue] && ![ZNSLastPortraitFlags[@"windowMatch"] boolValue]);
     ClientLayout(v.session); Ack(v.session);
     assert(!v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,narrow));
     puts("PASS scoped native hide: unknown/no source stays expanded; unpaired/wrong delegate cannot close; paired same-delegate empty restores through client-size acknowledgement.");
