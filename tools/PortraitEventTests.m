@@ -559,16 +559,20 @@ int main(void) { @autoreleasepool {
             if (end==4) v.closing=YES;
             if (end==5) p.attached=NO;
             if (end==6) {
-                v.session.keyboardPlacement=[ZNSKeyboardPlacement new];
-                v.session.keyboardPlacement.clientPID=p.clientPID;
-                v.session.keyboardPlacement.scene=p.scene;
-                v.session.keyboardPlacement.portraitExpansion=YES;
-                v.session.keyboardPlacement.active=YES;
+                ZNSKeyboardPlacement *replacement=[ZNSKeyboardPlacement new];
+                replacement.clientPID=p.clientPID; replacement.scene=p.scene;
+                replacement.portraitExpansion=YES; replacement.active=YES;
+                v.session.keyboardPlacement=replacement;
             }
-            // No hide phase; lifecycle / missing proof / wrong owner cannot
-            // use the hide-specific handoff or keep the old expanded canvas.
+            // Only explicit lifecycle/owner loss may restore without a hide.
             Publish(m,p,NO);
             assert(!v.session.znsPortraitRestorePending);
+            if (end==5) {
+                assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,expanded));
+                [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
+                assert(v.session.znsPortraitRestorePending);
+                ClientLayout(v.session);
+            }
         }
         ZNSFocus=YES;
         assert(!v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,original));
@@ -579,11 +583,13 @@ int main(void) { @autoreleasepool {
     m=Manager(&p); v=m.floating; v.session.layoutInFlight=YES;
     Publish(m,p,NO); assert(!v.portraitKeyboardExpanded && !v.portraitKeyboardSuppressed);
     v.session.layoutInFlight=NO; Publish(m,p,NO); assert(v.portraitKeyboardExpanded); Ack(v.session);
-    // Lost geometry past the bounded deadline restores safely WITHOUT a new
-    // suppression. Once the owned surface returns, the same show can retry.
-    ZNSNow+=2; Publish(m,p,NO); assert(!v.portraitKeyboardExpanded && !v.portraitKeyboardSuppressed);
-    Drain(ZNSAnimationEnds); assert(!v.portraitKeyboardRestoring);
-    p.attached=YES; Publish(m,p,NO); assert(v.portraitKeyboardExpanded); Ack(v.session);
+    // Geometry loss alone is not a keyboard close, even past remount grace.
+    ZNSNow+=2; Publish(m,p,NO); assert(v.portraitKeyboardExpanded && !v.portraitKeyboardSuppressed);
+    [p znsAcceptClientPhase:ZNSClientKeyboardHidden]; Publish(m,p,YES);
+    assert(v.session.znsPortraitRestorePending); ClientLayout(v.session);
+    assert(!v.portraitKeyboardExpanded); Drain(ZNSAnimationEnds);
+    [p znsAcceptClientPhase:ZNSClientKeyboardShown]; p.attached=YES;
+    Publish(m,p,NO); assert(v.portraitKeyboardExpanded); Ack(v.session);
     // Explicit drag/rotate suppression survives transient nil presentation;
     // only a real hide/end clears it for the next input session.
     [v restorePortraitKeyboardWithDuration:0 options:0];

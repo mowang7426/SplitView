@@ -21,7 +21,7 @@
     NSTimeInterval duration=[event[@"duration"] doubleValue];
     UIViewAnimationOptions options=[event[@"options"] unsignedIntegerValue];
     ZNSFloatingView *owner=self.floating;
-    ZNSKeyboardPlacement *placement=owner.session.keyboardPlacement;
+    ZNSKeyboardPlacement *placement=(ZNSKeyboardPlacement *)owner.session.keyboardPlacement;
     BOOL ownerMatch=owner && notification.object==placement &&
         [owner.session.bundleIdentifier isEqual:event[@"bundle"]];
     BOOL identityMatch=ownerMatch && [placement znsPortraitOwnerIdentityCurrent];
