@@ -21,9 +21,16 @@
     NSTimeInterval duration=[event[@"duration"] doubleValue];
     UIViewAnimationOptions options=[event[@"options"] unsignedIntegerValue];
     ZNSFloatingView *owner=self.floating;
-    BOOL ownerMatch=owner && notification.object==owner.session.keyboardPlacement &&
+    ZNSKeyboardPlacement *placement=owner.session.keyboardPlacement;
+    BOOL ownerMatch=owner && notification.object==placement &&
         [owner.session.bundleIdentifier isEqual:event[@"bundle"]];
-    NSString *exitReason=!ownerMatch?@"owner_mismatch":!self.enabled?@"manager_disabled":
+    BOOL identityMatch=ownerMatch && [placement znsPortraitOwnerIdentityCurrent];
+    BOOL ended=[event[@"ended"] boolValue];
+    ZNSPortraitClose close=[event[@"closeKind"] unsignedIntegerValue];
+    BOOL verifiedClose=ownerMatch && ended && close!=ZNSPortraitCloseNone;
+    NSString *exitReason=!ownerMatch?@"owner_mismatch":!identityMatch?@"owner_identity_changed":
+        ([placement znsPortraitExplicitExit] && !verifiedClose)?@"placement_exit":
+        !self.enabled?@"manager_disabled":
         self.window.hidden||owner.hidden?@"window_hidden":
         owner.closing||owner.dismissing?@"window_closing":
         owner.docked||owner.thumbnail||owner.dipped?@"window_parked":
@@ -35,25 +42,24 @@
     NSString *geometryReason=!owner.ready?@"not_ready":owner.session.layoutInFlight?@"layout_in_flight":
         !root?@"root_missing":!source?@"source_missing":
         ![event[@"frame"] isKindOfClass:NSValue.class]?@"frame_missing":nil;
-    BOOL eligible=!exitReason && !geometryReason;
+    BOOL eligible=!ended && !exitReason && !geometryReason;
     if (eligible) {
         CGRect keyboard=[root convertRect:[event[@"frame"] CGRectValue] fromView:source];
         eligible=ZNSPortraitKeyboardTarget(keyboard,root.bounds,root.safeAreaInsets.top,&target);
         if (!eligible) geometryReason=@"target_invalid";
     }
-    BOOL ended=[event[@"ended"] boolValue];
-    ZNSPortraitClose close=[event[@"closeKind"] unsignedIntegerValue];
-    // Continuity retains an existing expanded window only. It is never a
-    // substitute for a terminal phase or for valid expansion geometry.
-    BOOL holdUnknown=!eligible && !ended && !exitReason && owner.portraitKeyboardExpanded &&
-        [event[@"continuity"] boolValue];
+    // A matched, still-expanded owner survives transient geometry loss. Never
+    // hold across an owner change or terminal hide. Scene rollback is separate.
+    BOOL holdUnknown=!eligible && ownerMatch && !exitReason && !ended && !verifiedClose &&
+        [placement znsPortraitCanPreserveUnknown] && owner.portraitKeyboardExpanded;
     if (!eligible && owner.portraitKeyboardExpanded)
         ZNSKeyboardDiagDecision(@"portrait_geometry", 0,
-            @{@"restoreReason":holdUnknown?@"hold_scoped_input":ended?@"owner_ended":exitReason?:@"input_unproven",
-              @"geometryReason":geometryReason?:@"none", @"restoreAuth":@(ended && close!=ZNSPortraitCloseNone && ownerMatch),
-              @"ownerMatch":@(ownerMatch), @"expanded":@YES, @"windowMatch":@(source!=nil),
+            @{@"restoreReason":holdUnknown?@"preserve_matched_owner":ended?@"owner_ended":exitReason?:@"input_unproven",
+              @"geometryReason":geometryReason?:@"none", @"restoreAuth":@(verifiedClose),
+              @"ownerMatch":@(ownerMatch), @"identityMatch":@(identityMatch), @"expanded":@YES, @"windowMatch":@(source!=nil),
               @"continuity":@([event[@"continuity"] boolValue]), @"ended":@(ended), @"closeKind":@(close),
-              @"layoutInFlight":@(owner.session.layoutInFlight), @"ready":@(owner.ready)});
+              @"layoutInFlight":@(owner.session.layoutInFlight), @"ready":@(owner.ready),
+              @"preservedExistingExpansion":@(holdUnknown)});
     // Scene/host callbacks can synchronously remove windows during recovery.
     for (ZNSFloatingView *view in [self.windows copy]) {
         BOOL suppressed=view.portraitKeyboardSuppressed;
@@ -66,7 +72,7 @@
                         verifiedClose?(close==ZNSPortraitCloseClient?@"client_did_hide":@"native_paired_empty"):
                         ended?@"lifecycle_end":@"input_unproven",
                       @"geometryReason":geometryReason?:@"none", @"windowMatch":@(source!=nil),
-                      @"ownerMatch":@(view==owner && ownerMatch), @"expanded":@YES,
+                      @"ownerMatch":@(view==owner && ownerMatch), @"identityMatch":@(view==owner && identityMatch), @"expanded":@YES,
                       @"restoreAuth":@(verifiedClose), @"ended":@(ended), @"closeKind":@(close),
                       @"continuity":@([event[@"continuity"] boolValue]),
                       @"layoutInFlight":@(view.session.layoutInFlight), @"ready":@(view.ready)});

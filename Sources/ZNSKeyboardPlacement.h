@@ -27,6 +27,10 @@ FOUNDATION_EXPORT NSNotificationName const ZNSPortraitKeyboardWillHideVisualNoti
 - (void)updateHost:(UIView *)host canvas:(CGSize)canvas;
 // Arm BEFORE host mutation: private setters may synchronously emit hide/frame.
 - (void)znsBeginPortraitGeometryRefresh;
+// Current scene focus and process identity; never infer these from geometry.
+- (BOOL)znsPortraitOwnerIdentityCurrent;
+- (BOOL)znsPortraitExplicitExit;
+- (BOOL)znsPortraitCanPreserveUnknown;
 // Same scene/host and responder: invalidate only the old crop, not focus proof.
 - (void)updateTemporaryPortraitCanvas:(CGSize)canvas;
 - (uint64_t)znsRequestRestoreSize:(CGSize)size;

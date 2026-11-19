@@ -91,7 +91,7 @@ void ZNSKeyboardDiagDecision(NSString *decision, NSUInteger generation, NSDictio
     NSArray *allowed=@[@"visibleProof",@"ownerMatch",@"focusMatch",@"sceneCount",@"activeSceneCount",@"sceneMatch",@"windowMatch",@"canvasMatch",@"frameInScreen",@"placementVisible",@"expanded",@"restoreAuth",@"restoreReason",@"pollAttempt",@"ack",@"sceneApplied",@"handoff",@"layoutEpoch",@"swipe",@"animation"];
     for(NSString *key in allowed) if(fields[key]) record[key]=ZNSDiagSafe(fields[key]);
     for(NSString *flag in @[@"clientPhase",@"inputState",@"scopeMatch",@"delegateMatch",@"hideArmed",
-        @"mutating",@"dismissPending",@"ended",@"closeKind",@"continuity",@"layoutInFlight",@"ready"])
+        @"mutating",@"dismissPending",@"ended",@"closeKind",@"continuity",@"layoutInFlight",@"ready",@"identityMatch",@"preservedExistingExpansion",@"frameOwned"])
         if ([fields[flag] isKindOfClass:NSNumber.class]) record[flag]=fields[flag];
     if (fields[@"geometryReason"]) record[@"geometryReason"]=ZNSDiagSafe(fields[@"geometryReason"]);
     ZNSDiagAppend(record);

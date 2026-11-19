@@ -161,6 +161,9 @@ static id ZNSActiveKeyboardDelegate(void) { return @1; }
 - (void)schedule;
 - (void)znsResetPortraitInputScope;
 - (BOOL)znsPortraitInputScopeCurrent;
+- (BOOL)znsPortraitOwnerIdentityCurrent;
+- (BOOL)znsPortraitExplicitExit;
+- (BOOL)znsPortraitCanPreserveUnknown;
 - (void)znsRecordPortraitInputWithDelegate:(id)delegate;
 - (void)znsFinishPortraitHide:(ZNSPortraitClose)close;
 - (void)znsHandlePortraitNativeHide:(BOOL)didHide phase:(ZNSClientKeyboardPhase)phase
@@ -348,6 +351,27 @@ static void ZNSTestScopedNativeHide(void) {
     assert(!v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,narrow));
     puts("PASS scoped native hide: unknown/no source stays expanded; unpaired/wrong delegate cannot close; paired same-delegate empty restores through client-size acknowledgement.");
 
+    // Reproduce the reported commit gate exactly: same placement and bundle,
+    // expanded owner, missing geometry, no continuity, no ended/close proof.
+    m=Manager(&p); v=m.floating;
+    Publish(m,p,NO); Ack(v.session);
+    CGRect preservedFrame=v.frame;
+    NSUInteger sceneUpdates=v.session.scene.updates, animations=ZNSAnimations;
+    p.host.window=nil; [p restore];
+    NSUInteger transportRestores=p.restores;
+    Publish(m,p,NO);
+    assert(v.portraitKeyboardExpanded && CGRectEqualToRect(v.frame,preservedFrame));
+    assert(v.session.scene.updates==sceneUpdates && ZNSAnimations==animations && p.restores==transportRestores);
+    assert([ZNSLastPortraitDecision isEqual:@"portrait_geometry"] &&
+        [ZNSLastPortraitFlags[@"geometryReason"] isEqual:@"source_missing"] &&
+        [ZNSLastPortraitFlags[@"ownerMatch"] boolValue] && [ZNSLastPortraitFlags[@"identityMatch"] boolValue] &&
+        [ZNSLastPortraitFlags[@"expanded"] boolValue] && ![ZNSLastPortraitFlags[@"continuity"] boolValue] &&
+        ![ZNSLastPortraitFlags[@"ended"] boolValue] &&
+        [ZNSLastPortraitFlags[@"closeKind"] unsignedIntegerValue]==ZNSPortraitCloseNone &&
+        ![ZNSLastPortraitFlags[@"restoreAuth"] boolValue] &&
+        [ZNSLastPortraitFlags[@"preservedExistingExpansion"] boolValue]);
+    puts("PASS matched-owner geometry loss: expanded state is preserved without continuity, end, close, or restore authorization.");
+
     // A replaced process cannot inherit continuity from a previous owner.
     m=Manager(&p); v=m.floating;
     [p znsRecordPortraitInputWithDelegate:delegate]; Publish(m,p,NO); Ack(v.session);
@@ -534,7 +558,13 @@ int main(void) { @autoreleasepool {
             if (end==3) p.suspended=YES;
             if (end==4) v.closing=YES;
             if (end==5) p.attached=NO;
-            if (end==6) v.session.keyboardPlacement=[ZNSKeyboardPlacement new];
+            if (end==6) {
+                v.session.keyboardPlacement=[ZNSKeyboardPlacement new];
+                v.session.keyboardPlacement.clientPID=p.clientPID;
+                v.session.keyboardPlacement.scene=p.scene;
+                v.session.keyboardPlacement.portraitExpansion=YES;
+                v.session.keyboardPlacement.active=YES;
+            }
             // No hide phase; lifecycle / missing proof / wrong owner cannot
             // use the hide-specific handoff or keep the old expanded canvas.
             Publish(m,p,NO);

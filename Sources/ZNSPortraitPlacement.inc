@@ -11,6 +11,16 @@
         self.portraitInputPID>0 && self.portraitInputPID==ZNSKeyboardClientPID(self) &&
         ZNSKeyboardMatchesFocus(self);
 }
+- (BOOL)znsPortraitOwnerIdentityCurrent {
+    return self.clientPID>0 && self.clientPID==ZNSKeyboardClientPID(self) && ZNSKeyboardMatchesFocus(self);
+}
+- (BOOL)znsPortraitExplicitExit {
+    return !self.portraitExpansion || !self.active || self.suspended || self.invalidated ||
+        self.dismissPending || self.explicitlyDismissed || self.keyboardHidden;
+}
+- (BOOL)znsPortraitCanPreserveUnknown {
+    return [self znsPortraitOwnerIdentityCurrent] && ![self znsPortraitExplicitExit];
+}
 - (void)znsRecordPortraitInputWithDelegate:(id)delegate {
     // Called only for a verified visible presentation; never use the scope to
     // select a surface, attach it, or expand a new window without geometry.

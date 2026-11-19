@@ -190,6 +190,8 @@
         os_log_error(ZNSLog(),"P5_RESTORE_EXCEPTION %{public}@; saved floating frame retained",exception.name);
     }
     if (!restored) {
+        ZNSKeyboardDiagDecision(@"portrait_restore_commit",generation,
+            @{@"restoreReason":@"canvas_submit_failed", @"expanded":@(self.portraitKeyboardExpanded)});
         os_log_error(ZNSLog(),"P5_RESTORE_RETRY; saved floating frame retained");
         if (self.portraitKeyboardRestoreGeneration==generation) self.portraitKeyboardRestoring=NO;
         [self clearPortraitKeyboardVisualRestore];
@@ -198,6 +200,8 @@
     CGRect saved=self.portraitKeyboardSavedFrame;
     BOOL ownsFrame=visualRestore?ownsVisualFrame:CGRectEqualToRect(self.frame,self.portraitKeyboardTarget);
     self.portraitKeyboardExpanded=NO;
+    ZNSKeyboardDiagDecision(@"portrait_restore_commit",generation,
+        @{@"restoreReason":@"expanded_state_cleared", @"expanded":@NO, @"frameOwned":@(ownsFrame)});
     self.expandedFrame=self.portraitKeyboardSavedExpandedFrame;
     __weak typeof(self) weakSelf=self;
     void (^finish)(void)=^{

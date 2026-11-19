@@ -26,6 +26,7 @@ KEYBOARD_BRANCH_FILES = {
     'ZNSKeyboardClient.m', 'ZNSKeyboardDiag.m', 'ZNSKeyboardDiag.h', 'ZNSKeyboardPlacement.m',
     'ZNSPortraitInputState.h', 'ZNSPortraitNativeHide.inc',
     'ZNSKeyboardRestore.inc', 'ZNSPortraitManager.inc', 'ZNSPortraitPlacement.inc',
+    'ZNSKeyboardPlacement.h', 'ZNSPortraitFloating.inc',
     'ZNSPortraitVisibilityEvent.inc', 'ZNSPortraitVisualEvent.inc', 'ZNSPortraitScene.inc', 'ZNSSceneSession.m',
 }
 for path in sorted((ROOT / 'Sources').iterdir()):
